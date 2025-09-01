@@ -1,0 +1,23 @@
+{
+  "name": "dj-tools",
+  "version": "1.0.0",
+  "description": "Monorepo for DJ tools and music management utilities",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r dev",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "clean": "pnpm -r clean"
+  },
+  "keywords": ["dj", "music", "tools", "monorepo"],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+}

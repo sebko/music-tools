@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(pnpm install:*)",
+      "Bash(npm install:*)",
+      "Bash(pnpm --filter youtube-tracklist build)",
+      "Bash(pnpm --filter youtube-tracklist cli extract:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
