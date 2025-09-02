@@ -21,16 +21,16 @@ You need two API keys:
    - Go to [Anthropic Console](https://console.anthropic.com/)
    - Create an API key
 
-Set environment variables:
+Set environment variables in the **root** `.env` file:
 ```bash
-export YOUTUBE_API_KEY="your_youtube_api_key"
-export ANTHROPIC_API_KEY="your_anthropic_api_key"
+# Copy root example file and edit
+cp .env.example .env
 ```
 
-Or create a `.env` file:
-```
-YOUTUBE_API_KEY=your_youtube_api_key
-ANTHROPIC_API_KEY=your_anthropic_api_key
+Or set as system environment variables:
+```bash
+export YOUTUBE_API_KEY="your_youtube_api_key"  
+export ANTHROPIC_API_KEY="your_anthropic_api_key"
 ```
 
 ## CLI Usage
@@ -168,9 +168,9 @@ If you get "No tracks found in the comments":
 - **Rate Limits**: The tool includes built-in rate limiting, but check your API quotas
 
 ### Environment Setup
-Create a `.env` file in the package directory:
+Create a `.env` file in the **root directory**:
 ```bash
-cd packages/youtube-tracklist
-echo "YOUTUBE_API_KEY=your_youtube_key_here" > .env
-echo "ANTHROPIC_API_KEY=your_claude_key_here" >> .env
+# From the root of the dj-tools project
+cp .env.example .env
+# Edit .env with your API keys
 ```

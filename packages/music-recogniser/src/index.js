@@ -3,6 +3,9 @@
  * A pure audio recognition API with intensity modes using multiple services
  */
 
+// Load environment variables from package directory
+require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+
 const MusicRecogniser = require('./MusicRecognizer');
 const ShazamService = require('./services/shazam');
 const AudDService = require('./services/audd');

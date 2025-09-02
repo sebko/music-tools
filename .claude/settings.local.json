@@ -5,7 +5,19 @@
       "Bash(pnpm install:*)",
       "Bash(npm install:*)",
       "Bash(pnpm --filter youtube-tracklist build)",
-      "Bash(pnpm --filter youtube-tracklist cli extract:*)"
+      "Bash(pnpm --filter youtube-tracklist cli extract:*)",
+      "Bash(git restore:*)",
+      "Bash(pnpm --filter youtube-tracklist test)",
+      "Read(/Users/sebastiankey/github/trackid/packages/**)",
+      "Bash(npm test)",
+      "Bash(npm run:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm --filter @trackid/youtube-track-recogniser run example:basic)",
+      "Bash(pnpm --filter @trackid/youtube-track-recogniser run example:hybrid)",
+      "Bash(pnpm --filter @dj-tools/youtube-tracklist build)",
+      "Bash(pnpm:*)",
+      "Bash(node:*)",
+      "Read(/Users/sebastiankey/Downloads/**)"
     ],
     "deny": [],
     "ask": []

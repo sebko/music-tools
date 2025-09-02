@@ -56,11 +56,22 @@ pnpm --filter youtube-tracklist clean
 
 ## Environment Setup
 
-The youtube-tracklist package requires two API keys:
-- `YOUTUBE_API_KEY`: YouTube Data API v3 key
-- `ANTHROPIC_API_KEY`: Claude API key
+### Shared Environment Variables (Root `.env`)
+The following API keys are shared across multiple packages and should be placed in the root `.env` file:
+- `YOUTUBE_API_KEY`: YouTube Data API v3 key (used by youtube-tracklist and youtube-track-recogniser)
+- `ANTHROPIC_API_KEY`: Claude API key (used by youtube-tracklist and youtube-track-recogniser)
+- `AUDIO_TEMP_DIR`: Temporary directory for audio processing
+- `MAX_AUDIO_LENGTH`: Maximum audio duration in seconds
+- `AUDIO_QUALITY`: Audio quality setting
 
-These can be set as environment variables or in a `.env` file in the package directory.
+### Package-Specific Environment Variables
+Music recognition APIs are configured in `packages/music-recogniser/.env`:
+- `RAPIDAPI_SHAZAM_KEY`: Shazam API key via RapidAPI
+- `AUDD_API_KEY`: AudD.io API key  
+- `ACRCLOUD_ACCESS_KEY`: ACRCloud access key
+- And related configuration
+
+Copy `.env.example` files to `.env` and populate with your API keys.
 
 ## Key Technologies
 - **pnpm**: Package manager and workspace management

@@ -4,8 +4,8 @@ import { ClaudeClient } from './claude-client.js';
 import { CommentProcessor } from './comment-processor.js';
 import { TracklistResult, TrackEntry } from './types.js';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables from root
+dotenv.config({ path: '../../.env' });
 
 export * from './types.js';
 

@@ -1,6 +1,6 @@
-# @trackid/music-recognition
+# @trackid/music-recogniser
 
-A powerful, standalone Node.js package for single track music identification using multiple recognition services (Shazam, AudD, ACRCloud).
+Pure audio recognition API with intensity modes using multiple services (Shazam, AudD, ACRCloud). Provides a unified interface for music identification with consensus-based results.
 
 ## Features
 
@@ -15,7 +15,7 @@ A powerful, standalone Node.js package for single track music identification usi
 ## Installation
 
 ```bash
-npm install @trackid/music-recognition
+pnpm add @trackid/music-recogniser
 ```
 
 ### Prerequisites
@@ -41,7 +41,7 @@ Download from [FFmpeg official site](https://ffmpeg.org/download.html)
 ## Quick Start
 
 ```javascript
-const { identify } = require('@trackid/music-recognition');
+const { identify } = require('@trackid/music-recogniser');
 
 // Simple identification
 const result = await identify('./path/to/audio.mp3');
@@ -54,20 +54,29 @@ if (result) {
 
 ## API Configuration
 
-Set up your API keys as environment variables:
+Set up your API keys in the **package** `.env` file:
+
+```bash
+# Copy the example file and edit with your keys
+cd packages/music-recogniser  
+cp .env.example .env
+# Edit .env with your music recognition API keys
+```
+
+Or set as system environment variables:
 
 ```bash
 # Shazam (via RapidAPI)
-RAPIDAPI_SHAZAM_KEY=your_rapidapi_key
-RAPIDAPI_SHAZAM_HOST=shazam.p.rapidapi.com
+export RAPIDAPI_SHAZAM_KEY="your_rapidapi_key"
+export RAPIDAPI_SHAZAM_HOST="shazam.p.rapidapi.com"
 
 # AudD
-AUDD_API_KEY=your_audd_api_key
+export AUDD_API_KEY="your_audd_api_key"
 
-# ACRCloud
-ACRCLOUD_HOST=your_acrcloud_host
-ACRCLOUD_ACCESS_KEY=your_access_key
-ACRCLOUD_ACCESS_SECRET=your_access_secret
+# ACRCloud  
+export ACRCLOUD_HOST="your_acrcloud_host"
+export ACRCLOUD_ACCESS_KEY="your_access_key"
+export ACRCLOUD_ACCESS_SECRET="your_access_secret"
 ```
 
 ## Basic Usage
@@ -75,9 +84,9 @@ ACRCLOUD_ACCESS_SECRET=your_access_secret
 ### Using the Main Class
 
 ```javascript
-const { MusicRecognizer } = require('@trackid/music-recognition');
+const { MusicRecogniser } = require('@trackid/music-recogniser');
 
-const recognizer = new MusicRecognizer({
+const recognizer = new MusicRecogniser({
   // Service selection
   services: ['shazam', 'audd', 'acrcloud'],
   useAllServices: true,
@@ -123,7 +132,7 @@ const results = await recognizer.searchTracks('Darude Sandstorm');
 ## Advanced Configuration
 
 ```javascript
-const recognizer = new MusicRecognizer({
+const recognizer = new MusicRecogniser({
   // Service configuration
   services: ['shazam', 'audd', 'acrcloud'],
   useAllServices: true,
@@ -202,7 +211,7 @@ const recognizer = new MusicRecognizer({
 ### Using Services Directly
 
 ```javascript
-const { ShazamService, AudDService, ACRCloudService } = require('@trackid/music-recognition');
+const { ShazamService, AudDService, ACRCloudService } = require('@trackid/music-recogniser');
 
 // Shazam
 const shazam = new ShazamService({ apiKey: 'your_key' });
@@ -227,7 +236,7 @@ const result3 = await acrcloud.identifyTrack('./audio.mp3');
 ## Audio Processing
 
 ```javascript
-const { AudioProcessor } = require('@trackid/music-recognition');
+const { AudioProcessor } = require('@trackid/music-recogniser');
 
 const processor = new AudioProcessor({
   tempDir: './temp',
@@ -266,7 +275,7 @@ const {
   areResultsSimilar,
   groupSimilarResults,
   crossReferenceResults
-} = require('@trackid/music-recognition');
+} = require('@trackid/music-recogniser');
 
 // String similarity (0-1)
 const similarity = calculateStringSimilarity('Sandstorm', 'Sand Storm');

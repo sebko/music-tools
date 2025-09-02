@@ -1,4 +1,4 @@
-const { MusicRecognizer, identify } = require('@trackid/music-recogniser');
+const { MusicRecogniser, identify } = require('../src/index.js');
 
 async function basicExample() {
   console.log('🎵 Basic Music Recognition Example');
@@ -22,7 +22,7 @@ async function basicExample() {
 
     // Method 2: Using MusicRecognizer class
     console.log('\n2. Using MusicRecognizer class:');
-    const recognizer = new MusicRecognizer({
+    const recognizer = new MusicRecogniser({
       // Configure with your API keys
       shazam: {
         apiKey: process.env.RAPIDAPI_SHAZAM_KEY,
