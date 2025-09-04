@@ -17,7 +17,10 @@
       "Bash(pnpm --filter @dj-tools/youtube-tracklist build)",
       "Bash(pnpm:*)",
       "Bash(node:*)",
-      "Read(/Users/sebastiankey/Downloads/**)"
+      "Read(/Users/sebastiankey/Downloads/**)",
+      "Bash(find:*)",
+      "Bash(yt-dlp:*)",
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "ask": []

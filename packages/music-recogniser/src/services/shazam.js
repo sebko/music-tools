@@ -21,7 +21,7 @@ class ShazamService {
       if (typeof audioData === 'string') {
         // For Shazam, we need to limit file size
         const stats = fs.statSync(audioData);
-        if (stats.size > 500000) { // 500KB limit
+        if (stats.size > 800000) { // 800KB limit for better quality
           console.log('  ⚠️  File too large for Shazam, skipping...');
           return null;
         }
@@ -45,6 +45,7 @@ class ShazamService {
           timeout: 30000
         }
       );
+
 
       if (response.data && response.data.track) {
         const track = response.data.track;
@@ -71,6 +72,10 @@ class ShazamService {
       return null;
     } catch (error) {
       console.error('Shazam API error:', error.message);
+      if (error.response) {
+        console.error('Shazam response status:', error.response.status);
+        console.error('Shazam response data:', error.response.data);
+      }
       return null;
     }
   }

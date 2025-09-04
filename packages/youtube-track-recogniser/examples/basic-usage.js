@@ -12,11 +12,11 @@ async function basicExample() {
   ];
 
   try {
-    // Method 1: Using convenience function (Quick mode)
-    console.log('1. Quick Recognition (convenience function):');
+    // Method 1: Using convenience function (Low mode)
+    console.log('1. Low Intensity Recognition (convenience function):');
     console.log('=' .repeat(50));
     
-    const result1 = await identify(exampleUrls[0], { mode: 'quick' });
+    const result1 = await identify(exampleUrls[0], { mode: 'low' });
     
     if (result1 && result1.artist) {
       console.log(`✅ Found: ${result1.artist} - ${result1.title}`);
@@ -32,7 +32,7 @@ async function basicExample() {
     console.log('=' .repeat(50));
     
     const hybridResult = await identifyHybrid(exampleUrls[1], { 
-      mode: 'quick',
+      mode: 'low',
       preferAudioResult: true
     });
     
@@ -60,7 +60,7 @@ async function basicExample() {
     console.log('=' .repeat(50));
     
     const recogniser = new YouTubeTrackRecogniser({
-      mode: 'ham',
+      mode: 'medium',
       keepTempFiles: false,  // Clean up temp files
       musicRecogniser: {
         includeAlternateMatches: true
@@ -99,7 +99,7 @@ async function basicExample() {
     console.log('=' .repeat(50));
     
     const customRecogniser = new YouTubeTrackRecogniser({
-      mode: 'ultra',  // Most thorough mode
+      mode: 'high',  // Most thorough mode
       maxDuration: 1800,  // 30 minutes max
       audioQuality: '192',  // Higher quality
       musicRecogniser: {

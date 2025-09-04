@@ -4,6 +4,10 @@
   "description": "YouTube single track recognition using audio fingerprinting and comment analysis (single tracks only)",
   "main": "src/index.js",
   "types": "types/index.d.ts",
+  "bin": {
+    "youtube-track-recogniser": "src/cli.js",
+    "ytr": "src/cli.js"
+  },
   "keywords": [
     "youtube",
     "music",
@@ -35,6 +39,7 @@
   "dependencies": {
     "@dj-tools/youtube-tracklist": "workspace:*",
     "@trackid/music-recogniser": "workspace:*",
+    "commander": "^11.1.0",
     "dotenv": "^16.6.1",
     "yt-dlp-wrap": "^2.3.12"
   },

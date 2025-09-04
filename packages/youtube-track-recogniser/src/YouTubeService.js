@@ -50,16 +50,19 @@ class YouTubeService {
       console.log('📥 Downloading audio...');
       
       // Download audio with enhanced yt-dlp args
-      const downloadArgs = this.buildYtDlpArgs([
+      const downloadArgs = [
         url,
         '-x', // Extract audio
         '--audio-format', 'wav',
         '--audio-quality', this.audioQuality,
         '-o', outputPath,
         '--no-playlist', // Don't download playlists
+        '--format', 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best', // Prefer specific audio formats
+        '--user-agent', this.userAgent,
+        '--no-check-certificates',
         '--progress',
         '--newline'
-      ]);
+      ];
       
       await new Promise((resolve, reject) => {
         const process = this.ytDlpWrap.exec(downloadArgs);
@@ -102,20 +105,24 @@ class YouTubeService {
   buildYtDlpArgs(baseArgs) {
     const args = [...baseArgs];
     
-    // Add cookie authentication if enabled
-    if (this.useCookies) {
-      args.push('--cookies-from-browser', this.browser);
-    }
-    
     // Add user agent
     args.push('--user-agent', this.userAgent);
     
-    // Add additional workarounds
+    // Add workarounds for YouTube restrictions
     args.push(
-      '--extractor-args', 'youtube:player_client=android',
       '--no-check-certificates',
-      '--prefer-free-formats'
+      '--format', 'bestaudio/best'  // Prefer best audio format
     );
+    
+    // Try cookies only if not doing audio extraction to avoid conflicts
+    const isAudioExtraction = baseArgs.includes('-x') || baseArgs.includes('--extract-audio');
+    if (this.useCookies && !isAudioExtraction) {
+      try {
+        args.push('--cookies-from-browser', this.browser);
+      } catch (error) {
+        console.warn('Cookie authentication failed, continuing without cookies');
+      }
+    }
     
     return args;
   }

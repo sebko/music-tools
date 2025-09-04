@@ -6,8 +6,9 @@
  * For DJ mixes, live sets, or multi-track content, use @dj-tools/youtube-tracklist instead.
  */
 
-// Load environment variables from root (shared) and package (if any)
+// Load environment variables from root (shared) and music-recogniser package
 require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../../music-recogniser/.env') });
 
 const YouTubeTrackRecogniser = require('./YouTubeTrackRecogniser');
 const YouTubeService = require('./YouTubeService');
@@ -22,12 +23,23 @@ function createRecogniser(options = {}) {
 }
 
 /**
- * Quick identification function for YouTube URLs (audio only)
+ * Default identification function for YouTube URLs (uses hybrid approach - audio + comments)
  * @param {string} url - YouTube URL
  * @param {Object} options - Recognition options
  * @returns {Promise<Object|null>} Recognition result
  */
 async function identify(url, options = {}) {
+  const recogniser = new YouTubeTrackRecogniser(options);
+  return await recogniser.identifyHybrid(url);
+}
+
+/**
+ * Audio-only identification function for YouTube URLs 
+ * @param {string} url - YouTube URL
+ * @param {Object} options - Recognition options
+ * @returns {Promise<Object|null>} Recognition result from audio fingerprinting only
+ */
+async function identifyAudioOnly(url, options = {}) {
   const recogniser = new YouTubeTrackRecogniser(options);
   return await recogniser.identify(url);
 }
@@ -57,11 +69,11 @@ async function identifyFromComments(url, options = {}) {
 /**
  * Test intensity modes on a YouTube URL
  * @param {string} url - YouTube URL
- * @param {Array} modes - Modes to test (default: ['quick', 'ham', 'ultra'])
+ * @param {Array} modes - Modes to test (default: ['low', 'medium', 'high'])
  * @param {Object} options - Base options
  * @returns {Promise<Object>} Results from all modes
  */
-async function testModes(url, modes = ['quick', 'ham', 'ultra'], options = {}) {
+async function testModes(url, modes = ['low', 'medium', 'high'], options = {}) {
   const recogniser = new YouTubeTrackRecogniser(options);
   return await recogniser.testIntensityModes(url, modes);
 }
@@ -94,9 +106,10 @@ module.exports = {
   
   // Convenience functions
   createRecogniser,
-  identify,
-  identifyHybrid,
-  identifyFromComments,
+  identify,              // Now uses hybrid by default
+  identifyHybrid,        // Explicit hybrid function
+  identifyAudioOnly,     // Audio-only function (old identify behavior)
+  identifyFromComments,  // Comments-only function
   testModes,
   getVideoInfo,
   isValidYouTubeUrl,

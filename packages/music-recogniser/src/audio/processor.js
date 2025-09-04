@@ -186,6 +186,102 @@ class AudioProcessor {
   }
 
   /**
+   * Create Shazam-optimized audio sample (smaller file size, under 500KB)
+   * @param {string} audioPath - Path to source audio file
+   * @param {number} startTime - Start time in seconds
+   * @param {number} maxDuration - Maximum duration in seconds (default 8)
+   * @returns {Promise<string>} Path to optimized audio file
+   */
+  async createShazamOptimizedSample(audioPath, startTime, maxDuration = 8) {
+    try {
+      const outputPath = path.join(
+        this.tempDir,
+        `shazam_optimized_${Date.now()}_${startTime}.wav`
+      );
+
+      // Try multiple strategies - prioritize quality over file size for better recognition
+      const strategies = [
+        // Strategy 1: Short but highest quality (best for Shazam)
+        {
+          duration: 8,
+          sampleRate: 44100,
+          bitRate: '192k',
+          description: 'optimal quality'
+        },
+        // Strategy 2: Very short, high quality
+        {
+          duration: 6,
+          sampleRate: 44100,
+          bitRate: '160k',
+          description: 'high quality'
+        },
+        // Strategy 3: Moderate quality
+        {
+          duration: 5,
+          sampleRate: 44100,
+          bitRate: '128k',
+          description: 'medium quality'
+        },
+        // Strategy 4: Lower quality fallback
+        {
+          duration: 4,
+          sampleRate: 32000,
+          bitRate: '96k',
+          description: 'lower quality'
+        }
+      ];
+
+      for (const [index, strategy] of strategies.entries()) {
+        const attemptPath = path.join(
+          this.tempDir,
+          `shazam_attempt_${index}_${Date.now()}_${startTime}.wav`
+        );
+        
+        try {
+          // Create compressed audio sample with current strategy
+          const command = `ffmpeg -y -ss ${startTime} -i "${audioPath}" -t ${strategy.duration} -ar ${strategy.sampleRate} -ac 1 -sample_fmt s16 -b:a ${strategy.bitRate} "${attemptPath}"`;
+          
+          await execAsync(command);
+          
+          // Check file size - allow larger files for better quality
+          const stats = fs.statSync(attemptPath);
+          if (stats.size <= 750000) { // Under 750KB for better quality
+            // Success! Rename to final output path
+            if (fs.existsSync(outputPath)) {
+              fs.unlinkSync(outputPath);
+            }
+            fs.renameSync(attemptPath, outputPath);
+            
+            console.log(`    🔧 Shazam sample: ${strategy.description} (${Math.round(stats.size / 1024)}KB)`);
+            return outputPath;
+          } else {
+            // Too large, clean up and try next strategy
+            fs.unlinkSync(attemptPath);
+            if (index === strategies.length - 1) {
+              // Last strategy failed
+              throw new Error(`Cannot create Shazam sample under 750KB (last attempt: ${Math.round(stats.size / 1024)}KB)`);
+            }
+          }
+        } catch (ffmpegError) {
+          if (fs.existsSync(attemptPath)) {
+            fs.unlinkSync(attemptPath);
+          }
+          if (index === strategies.length - 1) {
+            throw ffmpegError;
+          }
+          // Try next strategy
+        }
+      }
+      
+      throw new Error('All Shazam optimization strategies failed');
+      
+    } catch (error) {
+      console.error('Error creating Shazam-optimized sample:', error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Clean up temporary files
    * @param {Array} filePaths - Array of file paths to delete
    */

@@ -9,7 +9,7 @@ const { crossReferenceResults } = require('./utils/consensus');
  * 
  * Features:
  * - Multi-service recognition (Shazam, AudD, ACRCloud)
- * - Intensity modes: quick, ham, ultra
+ * - Intensity modes: low, medium, high
  * - Strategic audio sampling for better accuracy
  * - Cross-reference validation using consensus algorithms
  * - Pure audio input - no YouTube/video processing
@@ -33,7 +33,7 @@ class MusicRecogniser {
     // Configuration options
     this.options = {
       // Intensity mode
-      mode: mergedOptions.mode || 'quick',
+      mode: mergedOptions.mode || 'medium',
       
       // Service selection
       enabledServices: mergedOptions.services || ['shazam', 'audd', 'acrcloud'],
@@ -63,24 +63,24 @@ class MusicRecogniser {
 
   /**
    * Get intensity mode preset configuration
-   * @param {string} mode - Intensity mode ('quick', 'ham', 'ultra')
+   * @param {string} mode - Intensity mode ('low', 'medium', 'high')
    * @returns {Object} Preset configuration
    */
   getIntensityModePreset(mode) {
     const presets = {
-      quick: {
+      low: {
         quickMode: true,
         confidenceThreshold: 0.85,
         maxAttempts: 5,
-        samplePoints: [0.1, 0.3, 0.5, 0.7, 0.9],  // 5 samples
+        samplePoints: [0.3, 0.4, 0.5, 0.6, 0.7],  // 5 samples, starting later for better musical content
         segmentDuration: 10,
         timeout: 30000,
-        useAllServices: false,
+        useAllServices: true,
         consensusThreshold: 0.7,
         includeAlternateMatches: false
       },
       
-      ham: {
+      medium: {
         quickMode: false,  // Don't exit early
         confidenceThreshold: 0.8,
         maxAttempts: 10,
@@ -93,7 +93,7 @@ class MusicRecogniser {
         includeRawResults: false
       },
       
-      ultra: {
+      high: {
         quickMode: false,  // Never exit early
         confidenceThreshold: 0.9,
         maxAttempts: 20,
@@ -107,7 +107,7 @@ class MusicRecogniser {
       }
     };
 
-    return presets[mode] || presets.quick;
+    return presets[mode] || presets.medium;
   }
 
   /**
@@ -227,7 +227,7 @@ class MusicRecogniser {
         
         console.log(`🎵 Trying sample at ${Math.round(segment.samplePoint * 100)}% (${this.audioProcessor.formatDuration(segment.startTime)})`);
         
-        const result = await this.identifyWithServices(segment.path, services, options);
+        const result = await this.identifyWithServices(segment.path, services, options, { ...segment, originalAudioPath: audioPath });
         attemptCount++;
         
         if (result) {
@@ -276,9 +276,10 @@ class MusicRecogniser {
    * @param {string|Buffer} audioData - Audio data
    * @param {Array} services - Available services
    * @param {Object} options - Recognition options
+   * @param {Object} segment - Segment information (optional, for timing)
    * @returns {Promise<Object|null>} Recognition result
    */
-  async identifyWithServices(audioData, services, options) {
+  async identifyWithServices(audioData, services, options, segment = null) {
     // Determine which services to use
     const servicesToUse = options.useAllServices ? services : [services[0]];
     
@@ -312,49 +313,79 @@ class MusicRecogniser {
     // Multi-service recognition with consensus
     console.log(`🔍 Running recognition with ${servicesToUse.length} services...`);
 
-    // Run all services in parallel
-    const promises = servicesToUse.map(async ({ name, service }) => {
-      try {
-        console.log(`  • Querying ${name}...`);
-        const result = await Promise.race([
-          service.identifyTrack(audioData),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Timeout')), options.timeout)
-          )
-        ]);
-        
-        if (result) {
-          console.log(`  ✓ ${name} found: ${result.artist} - ${result.title}`);
-        } else {
-          console.log(`  ✗ ${name} found no matches`);
-        }
-        
-        return { service: name, result };
-      } catch (error) {
-        console.log(`  ✗ ${name} error: ${error.message}`);
-        return { service: name, result: null, error: error.message };
+    // Create service-specific audio files
+    const serviceAudioFiles = [];
+    
+    try {
+      // For Shazam, create optimized version using original audio and segment timing
+      let shazamAudioData = audioData;
+      if (typeof audioData === 'string' && segment && segment.originalAudioPath) {
+        // Use the original audio file and actual segment timing for Shazam optimization
+        const startTime = segment.startTime || 0;
+        shazamAudioData = await this.audioProcessor.createShazamOptimizedSample(segment.originalAudioPath, startTime);
+        serviceAudioFiles.push(shazamAudioData);
+      } else if (typeof audioData === 'string' && !segment) {
+        // Fallback to 50% point if no segment info - better for musical content
+        const duration = await this.audioProcessor.getAudioDuration(audioData);
+        const startTime = Math.max(0, duration * 0.5);
+        shazamAudioData = await this.audioProcessor.createShazamOptimizedSample(audioData, startTime);
+        serviceAudioFiles.push(shazamAudioData);
       }
-    });
 
-    const results = await Promise.all(promises);
-    
-    // Filter out null results
-    const validResults = results.filter(r => r.result !== null);
-    
-    if (validResults.length === 0) {
-      console.log('  ❌ No services found matches');
-      return null;
+      // Run all services in parallel with appropriate audio data
+      const promises = servicesToUse.map(async ({ name, service }) => {
+        try {
+          console.log(`  • Querying ${name}...`);
+          
+          // Use optimized audio for Shazam, original for others
+          const serviceAudio = (name === 'shazam' && shazamAudioData !== audioData) ? shazamAudioData : audioData;
+          
+          const result = await Promise.race([
+            service.identifyTrack(serviceAudio),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Timeout')), options.timeout)
+            )
+          ]);
+          
+          if (result) {
+            console.log(`  ✓ ${name} found: ${result.artist} - ${result.title}`);
+          } else {
+            console.log(`  ✗ ${name} found no matches`);
+          }
+          
+          return { service: name, result };
+        } catch (error) {
+          console.log(`  ✗ ${name} error: ${error.message}`);
+          return { service: name, result: null, error: error.message };
+        }
+      });
+
+      const results = await Promise.all(promises);
+      
+      // Filter out null results
+      const validResults = results.filter(r => r.result !== null);
+      
+      if (validResults.length === 0) {
+        console.log('  ❌ No services found matches');
+        return null;
+      }
+
+      console.log(`  📊 Got ${validResults.length} valid results`);
+
+      // If only one result, return it
+      if (validResults.length === 1) {
+        return validResults[0].result;
+      }
+
+      // Cross-reference results
+      return crossReferenceResults(validResults, servicesToUse.length, options.consensusThreshold);
+      
+    } finally {
+      // Clean up service-specific audio files
+      if (serviceAudioFiles.length > 0) {
+        await this.audioProcessor.cleanup(serviceAudioFiles);
+      }
     }
-
-    console.log(`  📊 Got ${validResults.length} valid results`);
-
-    // If only one result, return it
-    if (validResults.length === 1) {
-      return validResults[0].result;
-    }
-
-    // Cross-reference results
-    return crossReferenceResults(validResults, servicesToUse.length, options.consensusThreshold);
   }
 
   /**

@@ -27,7 +27,7 @@ async function hybridExample() {
       console.log('-'.repeat(40));
       
       const hybridResult = await identifyHybrid(url, {
-        mode: 'quick',
+        mode: 'low',
         preferAudioResult: true,
         commentOptions: {
           maxComments: 300,
@@ -74,7 +74,7 @@ async function hybridExample() {
       // Audio only
       try {
         console.log('🎧 Audio Recognition:');
-        const audioResult = await identify(url, { mode: 'quick' });
+        const audioResult = await identify(url, { mode: 'low' });
         if (audioResult && audioResult.artist) {
           console.log(`   ✅ ${audioResult.artist} - ${audioResult.title} (${audioResult.confidence.toFixed(2)})`);
         } else {
@@ -139,7 +139,7 @@ async function configurationExample() {
   // High accuracy configuration
   console.log('1. High Accuracy Setup (slower but more thorough):');
   const highAccuracyResult = await identifyHybrid(url, {
-    mode: 'ultra',                    // Most thorough audio recognition
+    mode: 'high',                    // Most thorough audio recognition
     preferAudioResult: false,         // Compare confidence scores
     commentOptions: {
       maxComments: 1000,              // Check more comments
@@ -157,9 +157,9 @@ async function configurationExample() {
   }
 
   // Fast configuration
-  console.log('\n2. Fast Recognition (quick results):');
+  console.log('\n2. Fast Recognition (low intensity):');
   const fastResult = await identifyHybrid(url, {
-    mode: 'quick',                    // Fastest audio recognition
+    mode: 'low',                    // Fastest audio recognition
     preferAudioResult: true,          // Trust audio first
     commentOptions: {
       maxComments: 200,               // Fewer comments to check

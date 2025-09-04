@@ -9,6 +9,7 @@ This is a pnpm monorepo for DJ tools and music management utilities. The codebas
 ### Repository Organization
 - **Root**: Contains workspace configuration and shared TypeScript setup
 - **packages/youtube-tracklist**: Main package that extracts tracklists from YouTube video comments using Claude AI
+- **packages/youtube-track-recogniser**: Identifies individual tracks from YouTube videos using audio fingerprinting (Shazam, AudD, ACRCloud)
 
 ### Package Architecture (youtube-tracklist)
 The youtube-tracklist package follows a modular architecture:
@@ -40,6 +41,8 @@ pnpm clean
 ```
 
 ### Package-Specific Commands
+
+#### youtube-tracklist (Extract full tracklists from DJ mixes/sets)
 ```bash
 # Build specific package
 pnpm --filter youtube-tracklist build
@@ -53,6 +56,21 @@ pnpm --filter youtube-tracklist cli extract "VIDEO_ID" --max-comments 500 --form
 # Clean specific package
 pnpm --filter youtube-tracklist clean
 ```
+
+#### youtube-track-recogniser (Identify individual songs)
+```bash
+# Run track recognition on a YouTube video
+cd packages/youtube-track-recogniser && node src/cli.js "https://youtube.com/watch?v=VIDEO_ID"
+
+# Or use the shorter alias
+cd packages/youtube-track-recogniser && ytr "VIDEO_ID"
+```
+
+### IMPORTANT: Track Identification Instructions
+When a user asks "what song is this?", "find me this track", "identify this song", or provides a YouTube URL asking for track identification:
+1. **USE youtube-track-recogniser** - This tool uses audio fingerprinting to identify individual songs
+2. **DO NOT USE youtube-tracklist** - This is for extracting full DJ set tracklists from comments, not for identifying individual songs
+3. The command is: `cd packages/youtube-track-recogniser && node src/cli.js "URL"`
 
 ## Environment Setup
 

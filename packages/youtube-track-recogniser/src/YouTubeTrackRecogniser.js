@@ -19,13 +19,13 @@ class YouTubeTrackRecogniser {
     
     // Initialize music recogniser with intensity mode and options
     this.musicRecogniser = new MusicRecogniser({
-      mode: options.mode || 'quick',
+      mode: options.mode || 'medium',
       ...options.musicRecogniser
     });
     
     this.options = {
       // Default intensity mode
-      mode: options.mode || 'quick',
+      mode: options.mode || 'medium',
       
       // YouTube processing options
       maxDuration: options.maxDuration || 3600, // 1 hour max
@@ -91,7 +91,7 @@ class YouTubeTrackRecogniser {
           ...result,
           
           // YouTube source info
-          source: 'youtube',
+          source: result.source || 'audio',
           youtube: {
             url: url,
             id: metadata.id,
@@ -107,7 +107,9 @@ class YouTubeTrackRecogniser {
             total_time_ms: Date.now() - startTime,
             recognition_time_ms: result.processing_time_ms,
             download_time_ms: (Date.now() - startTime) - (result.processing_time_ms || 0),
-            mode_used: callOptions.mode || this.options.mode
+            mode_used: callOptions.mode || this.options.mode,
+            audio_success: true,
+            comments_success: false
           }
         };
         
@@ -399,10 +401,10 @@ class YouTubeTrackRecogniser {
   /**
    * Test different intensity modes on the same video
    * @param {string} url - YouTube URL
-   * @param {Array} modes - Array of modes to test ['quick', 'ham', 'ultra']
+   * @param {Array} modes - Array of modes to test ['low', 'medium', 'high']
    * @returns {Promise<Object>} Results from all modes
    */
-  async testIntensityModes(url, modes = ['quick', 'ham', 'ultra']) {
+  async testIntensityModes(url, modes = ['low', 'medium', 'high']) {
     console.log(`🧪 Testing ${modes.length} intensity modes on: ${url}`);
     
     const results = {};

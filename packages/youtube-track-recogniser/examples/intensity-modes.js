@@ -12,7 +12,7 @@ async function testIntensityModes() {
     console.log('\nThis will test all three intensity modes and compare results:\n');
     
     // Test all intensity modes
-    const results = await testModes(testUrl, ['quick', 'ham', 'ultra']);
+    const results = await testModes(testUrl, ['low', 'medium', 'high']);
     
     console.log('\n🏆 FINAL RESULTS SUMMARY:');
     console.log('='.repeat(60));
@@ -22,7 +22,7 @@ async function testIntensityModes() {
     let bestConfidence = 0;
     
     // Analyze results
-    ['quick', 'ham', 'ultra'].forEach(mode => {
+    ['low', 'medium', 'high'].forEach(mode => {
       const result = results[mode];
       
       if (result.error) {
@@ -89,7 +89,7 @@ async function singleModeExample() {
 
   try {
     const result = await identify(testUrl, { 
-      mode: 'ham',  // Use HAM mode for good balance of speed vs accuracy
+      mode: 'medium',  // Use medium mode for good balance of speed vs accuracy
       includeAlternateMatches: true 
     });
 
