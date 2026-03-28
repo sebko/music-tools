@@ -10,6 +10,7 @@
     "generate-art": ".venv/bin/python3 scripts/generate_album_art.py",
     "generate-art:dry": ".venv/bin/python3 scripts/generate_album_art.py --dry-run",
     "run-all": ".venv/bin/python3 scripts/run_all.py",
-    "run-all:dry": ".venv/bin/python3 scripts/run_all.py --dry-run"
+    "run-all:dry": ".venv/bin/python3 scripts/run_all.py --dry-run",
+    "watch": ".venv/bin/python3 scripts/watch.py"
   }
 }

@@ -10,7 +10,12 @@
     "lint": "pnpm -r lint",
     "clean": "pnpm -r clean"
   },
-  "keywords": ["dj", "music", "tools", "monorepo"],
+  "keywords": [
+    "dj",
+    "music",
+    "tools",
+    "monorepo"
+  ],
   "author": "",
   "license": "MIT",
   "engines": {

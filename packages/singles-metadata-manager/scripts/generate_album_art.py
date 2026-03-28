@@ -192,10 +192,11 @@ HANDLERS = {
 }
 
 
-def process_directory(root_dir: Path, dry_run: bool) -> dict:
+def process_directory(root_dir: Path, dry_run: bool, skip_folders: list[str] | None = None) -> dict:
     """Walk directory and embed album art in all audio files."""
     stats = {'processed': 0, 'skipped': 0, 'errors': 0}
     art_cache = {}  # Cache generated art per folder
+    skip_set = set(skip_folders) if skip_folders else set()
 
     for dirpath, dirnames, filenames in os.walk(root_dir):
         dirpath = Path(dirpath)
@@ -203,6 +204,12 @@ def process_directory(root_dir: Path, dry_run: bool) -> dict:
 
         # Skip root and hidden directories
         if dirpath == root_dir or folder_name.startswith('.'):
+            continue
+
+        # Skip folders matching any skip pattern
+        if folder_name in skip_set:
+            print(f"\n[{folder_name}] SKIPPED")
+            dirnames.clear()
             continue
 
         audio_files = [f for f in filenames if Path(f).suffix.lower() in HANDLERS]
@@ -237,6 +244,42 @@ def process_directory(root_dir: Path, dry_run: bool) -> dict:
                     stats['processed'] += 1
             else:
                 stats['skipped'] += 1
+
+    return stats
+
+
+def process_single_folder(folder_path: Path, dry_run: bool = False) -> dict:
+    """Process audio files in a single folder (no recursion)."""
+    stats = {'processed': 0, 'skipped': 0, 'errors': 0}
+    folder_name = folder_path.name
+
+    if folder_name.startswith('.'):
+        return stats
+
+    audio_files = [f for f in folder_path.iterdir()
+                   if f.is_file() and f.suffix.lower() in HANDLERS]
+
+    if not audio_files:
+        return stats
+
+    art_text = parse_folder_name(folder_name)
+    print(f"\n[{folder_name}] -> \"{art_text}\" ({len(audio_files)} files)")
+    art_data = generate_album_art(art_text)
+
+    for filepath in audio_files:
+        handler = HANDLERS.get(filepath.suffix.lower())
+        if handler:
+            action = "Would embed" if dry_run else "Embedding"
+            print(f"  {action}: {filepath.name[:55]}...")
+            if not dry_run:
+                if handler(filepath, art_data):
+                    stats['processed'] += 1
+                else:
+                    stats['errors'] += 1
+            else:
+                stats['processed'] += 1
+        else:
+            stats['skipped'] += 1
 
     return stats
 

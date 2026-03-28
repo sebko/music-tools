@@ -24,6 +24,12 @@ def main():
         action='store_true',
         help='Preview changes without modifying files'
     )
+    parser.add_argument(
+        '--skip', '-s',
+        nargs='+',
+        default=[],
+        help='Folder names to skip (e.g. --skip 2024 2025)'
+    )
 
     args = parser.parse_args()
     root_dir = Path(args.directory).resolve()
@@ -37,7 +43,9 @@ def main():
     # Step 1: Set album tags
     print(f"=== Step 1: Album Tag Updater ({mode}) ===")
     print(f"Root: {root_dir}")
-    tag_stats = set_tags(root_dir, args.dry_run)
+    if args.skip:
+        print(f"Skipping folders: {', '.join(args.skip)}")
+    tag_stats = set_tags(root_dir, args.dry_run, args.skip or None)
 
     print(f"\nTag results: {tag_stats['processed']} processed, "
           f"{tag_stats['errors']} errors, {tag_stats['skipped']} skipped")
@@ -45,7 +53,7 @@ def main():
     # Step 2: Generate and embed album art
     print(f"\n=== Step 2: Album Art Generator ({mode}) ===")
     print(f"Root: {root_dir}")
-    art_stats = generate_art(root_dir, args.dry_run)
+    art_stats = generate_art(root_dir, args.dry_run, args.skip or None)
 
     print(f"\nArt results: {art_stats['processed']} processed, "
           f"{art_stats['errors']} errors, {art_stats['skipped']} skipped")

@@ -146,9 +146,10 @@ def parse_folder_name(folder_name: str) -> str:
     return f"Singles - {folder_name}"
 
 
-def process_directory(root_dir: Path, dry_run: bool) -> dict:
+def process_directory(root_dir: Path, dry_run: bool, skip_folders: list[str] | None = None) -> dict:
     """Walk directory and update all audio files."""
     stats = {'processed': 0, 'skipped': 0, 'errors': 0}
+    skip_set = set(skip_folders) if skip_folders else set()
 
     for dirpath, dirnames, filenames in os.walk(root_dir):
         dirpath = Path(dirpath)
@@ -156,6 +157,12 @@ def process_directory(root_dir: Path, dry_run: bool) -> dict:
 
         # Skip the root directory itself and hidden directories
         if dirpath == root_dir or folder_name.startswith('.'):
+            continue
+
+        # Skip folders matching any skip pattern
+        if folder_name in skip_set:
+            print(f"\n[{folder_name}] SKIPPED")
+            dirnames.clear()
             continue
 
         audio_files = [f for f in filenames if Path(f).suffix.lower() in HANDLERS]
@@ -183,6 +190,38 @@ def process_directory(root_dir: Path, dry_run: bool) -> dict:
                     stats['errors'] += 1
             else:
                 stats['skipped'] += 1
+
+    return stats
+
+
+def process_single_folder(folder_path: Path, dry_run: bool = False) -> dict:
+    """Process audio files in a single folder (no recursion)."""
+    stats = {'processed': 0, 'skipped': 0, 'errors': 0}
+    folder_name = folder_path.name
+
+    if folder_name.startswith('.'):
+        return stats
+
+    audio_files = [f for f in folder_path.iterdir()
+                   if f.is_file() and f.suffix.lower() in HANDLERS]
+
+    if not audio_files:
+        return stats
+
+    album_name = parse_folder_name(folder_name)
+    print(f"\n[{folder_name}] -> \"{album_name}\" ({len(audio_files)} files)")
+
+    for filepath in audio_files:
+        handler = HANDLERS.get(filepath.suffix.lower())
+        if handler:
+            action = "Would set" if dry_run else "Setting"
+            print(f"  {action}: {filepath.name[:60]}...")
+            if handler(filepath, album_name, dry_run):
+                stats['processed'] += 1
+            else:
+                stats['errors'] += 1
+        else:
+            stats['skipped'] += 1
 
     return stats
 
