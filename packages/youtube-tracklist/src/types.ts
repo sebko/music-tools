@@ -5,6 +5,7 @@ export interface TrackEntry {
   confidence: number;
   context: string;
   language?: string;
+  alternatives?: string[];
 }
 
 export interface ExtractionMetadata {

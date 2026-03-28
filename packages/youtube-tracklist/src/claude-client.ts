@@ -18,7 +18,7 @@ export class ClaudeClient {
 
     try {
       const response = await this.client.messages.create({
-        model: "claude-3-5-sonnet-20241022",
+        model: "claude-sonnet-4-20250514",
         max_tokens: 4000,
         messages: [
           {
@@ -53,6 +53,7 @@ export class ClaudeClient {
 - Responses to "what song?" or "track ID?" questions
 - Timestamps with track info (3:45 Artist - Title)
 - Song requests and identifications
+- Alternative names (e.g., "could be X or Y", "either Name1 or Name2")
 - Any language (English, Spanish, Portuguese, etc.)
 - Misspelled or abbreviated artist/track names
 - Slang and informal references
@@ -67,6 +68,7 @@ Return a JSON array of tracks found. For each track include:
 - confidence: Your confidence score (0.0-1.0)
 - context: The original comment text where you found it
 - language: Detected language code (en, es, pt, etc.)
+- alternatives: Array of alternative titles if mentioned (optional, e.g., ["Alt Title 1", "Alt Title 2"])
 
 Only include tracks you're reasonably confident about (confidence > 0.3). If no tracks found, return empty array. Do not under any circumstance create a fake track name.
 
@@ -79,6 +81,14 @@ Example output:
     "confidence": 0.95,
     "context": "3:45 deadmau5 - strobe is pure magic",
     "language": "en"
+  },
+  {
+    "artist": "La Embajada Cultural",
+    "title": "Cumbia Chowy",
+    "confidence": 0.85,
+    "context": "Cumbia chowy O Jilguerito alegre - cualquiera de esos dos nombres",
+    "language": "es",
+    "alternatives": ["Jilguerito Alegre"]
   }
 ]`;
   }
@@ -104,6 +114,7 @@ Example output:
         confidence: Math.max(0, Math.min(1, track.confidence || 0)),
         context: track.context || "",
         language: track.language || "unknown",
+        alternatives: track.alternatives || undefined,
       }));
     } catch (error) {
       console.warn("Failed to parse Claude response:", error);

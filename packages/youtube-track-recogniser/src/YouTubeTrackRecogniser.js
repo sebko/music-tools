@@ -307,6 +307,7 @@ class YouTubeTrackRecogniser {
         title: commentResult.title,
         confidence: commentResult.confidence,
         context: commentResult.context,
+        alternatives: commentResult.alternatives,
         matchesAudio: agreement
       } : null,
       

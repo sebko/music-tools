@@ -41,6 +41,28 @@ importers:
         specifier: ^30.0.4
         version: 30.1.2(@types/node@18.19.123)
 
+  packages/youtube-setlist-recogniser:
+    dependencies:
+      '@dj-tools/youtube-tracklist':
+        specifier: workspace:*
+        version: link:../youtube-tracklist
+      '@trackid/music-recogniser':
+        specifier: workspace:*
+        version: link:../music-recogniser
+      commander:
+        specifier: ^11.1.0
+        version: 11.1.0
+      dotenv:
+        specifier: ^16.6.1
+        version: 16.6.1
+      yt-dlp-wrap:
+        specifier: ^2.3.12
+        version: 2.3.12
+    devDependencies:
+      jest:
+        specifier: ^30.0.4
+        version: 30.1.2(@types/node@18.19.123)
+
   packages/youtube-track-recogniser:
     dependencies:
       '@dj-tools/youtube-tracklist':

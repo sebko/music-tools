@@ -213,6 +213,11 @@ function printResult(result) {
     console.log('\n💬 Comment Context:');
     const context = result.commentsFound.context.substring(0, 100);
     console.log(`   "${context}${result.commentsFound.context.length > 100 ? '...' : ''}"`);
+    
+    // Show alternatives if available
+    if (result.commentsFound.alternatives && result.commentsFound.alternatives.length > 0) {
+      console.log(`\n🔀 Alternative Names: ${result.commentsFound.alternatives.join(', ')}`);
+    }
   }
 
   // Show alternate matches if available
