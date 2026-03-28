@@ -1,0 +1,15 @@
+{
+  "name": "singles-metadata-manager",
+  "version": "1.0.0",
+  "description": "Python scripts for managing DJ library metadata (album tags, artwork)",
+  "private": true,
+  "scripts": {
+    "setup": "bash setup.sh",
+    "set-tags": ".venv/bin/python3 scripts/set_album_tags.py",
+    "set-tags:dry": ".venv/bin/python3 scripts/set_album_tags.py --dry-run",
+    "generate-art": ".venv/bin/python3 scripts/generate_album_art.py",
+    "generate-art:dry": ".venv/bin/python3 scripts/generate_album_art.py --dry-run",
+    "run-all": ".venv/bin/python3 scripts/run_all.py",
+    "run-all:dry": ".venv/bin/python3 scripts/run_all.py --dry-run"
+  }
+}
