@@ -10,14 +10,14 @@ import argparse
 from pathlib import Path
 
 from mutagen import File
-from mutagen.id3 import ID3, TALB, TCMP, TPE2, ID3NoHeaderError
+from mutagen.id3 import ID3, TALB, TCMP, TPE2, TRCK, ID3NoHeaderError
 from mutagen.flac import FLAC
 from mutagen.mp4 import MP4
 from mutagen.wave import WAVE
 from mutagen.aiff import AIFF
 
 
-def set_mp3_tags(filepath: Path, album: str, dry_run: bool) -> bool:
+def set_mp3_tags(filepath: Path, album: str, track_num: int, dry_run: bool) -> bool:
     """Set tags for MP3 files using ID3v2."""
     try:
         try:
@@ -28,8 +28,15 @@ def set_mp3_tags(filepath: Path, album: str, dry_run: bool) -> bool:
         audio['TALB'] = TALB(encoding=3, text=album)
         audio['TCMP'] = TCMP(encoding=3, text='1')
         audio['TPE2'] = TPE2(encoding=3, text='Various Artists')
-        audio.delall('TRCK')  # Remove track number
+        audio['TRCK'] = TRCK(encoding=3, text=str(track_num))
         audio.delall('TPOS')  # Remove disc number
+        audio.delall('TSRC')  # Remove ISRC
+        audio.delall('TIT1')  # Remove grouping
+        audio.delall('COMM')  # Remove comments
+        # Remove TXXX tags that cause disc groupings or catalog matching
+        for desc in ('DISCTOTAL', 'TOTALDISCS', 'TRACKTOTAL', 'TOTALTRACKS',
+                     'BARCODE', 'UPC', 'ISRC'):
+            audio.delall(f'TXXX:{desc}')
 
         if not dry_run:
             audio.save(filepath)
@@ -39,17 +46,22 @@ def set_mp3_tags(filepath: Path, album: str, dry_run: bool) -> bool:
         return False
 
 
-def set_flac_tags(filepath: Path, album: str, dry_run: bool) -> bool:
+def set_flac_tags(filepath: Path, album: str, track_num: int, dry_run: bool) -> bool:
     """Set tags for FLAC files using Vorbis comments."""
     try:
         audio = FLAC(filepath)
         audio['ALBUM'] = album
         audio['COMPILATION'] = '1'
         audio['ALBUMARTIST'] = 'Various Artists'
-        if 'TRACKNUMBER' in audio:
-            del audio['TRACKNUMBER']
+        audio['TRACKNUMBER'] = str(track_num)
         if 'DISCNUMBER' in audio:
             del audio['DISCNUMBER']
+        # Remove tags that cause disc groupings or catalog matching
+        for tag in ('DISCTOTAL', 'TOTALDISCS', 'TRACKTOTAL', 'TOTALTRACKS',
+                     'DISC', 'TRACK', 'ISRC', 'BARCODE', 'UPC',
+                     'GROUPING', 'COMMENT'):
+            if tag in audio:
+                del audio[tag]
 
         if not dry_run:
             audio.save()
@@ -59,17 +71,17 @@ def set_flac_tags(filepath: Path, album: str, dry_run: bool) -> bool:
         return False
 
 
-def set_m4a_tags(filepath: Path, album: str, dry_run: bool) -> bool:
+def set_m4a_tags(filepath: Path, album: str, track_num: int, dry_run: bool) -> bool:
     """Set tags for M4A/MP4 files."""
     try:
         audio = MP4(filepath)
         audio['\xa9alb'] = [album]  # ©alb
         audio['cpil'] = True
         audio['aART'] = ['Various Artists']
-        if 'trkn' in audio:
-            del audio['trkn']
-        if 'disk' in audio:
-            del audio['disk']
+        audio['trkn'] = [(track_num, 0)]
+        for tag in ('disk', '----:com.apple.iTunes:ISRC', '\xa9grp', '\xa9cmt'):
+            if tag in audio:
+                del audio[tag]
 
         if not dry_run:
             audio.save()
@@ -79,7 +91,7 @@ def set_m4a_tags(filepath: Path, album: str, dry_run: bool) -> bool:
         return False
 
 
-def set_wav_tags(filepath: Path, album: str, dry_run: bool) -> bool:
+def set_wav_tags(filepath: Path, album: str, track_num: int, dry_run: bool) -> bool:
     """Set tags for WAV files using ID3."""
     try:
         audio = WAVE(filepath)
@@ -89,8 +101,14 @@ def set_wav_tags(filepath: Path, album: str, dry_run: bool) -> bool:
         audio.tags['TALB'] = TALB(encoding=3, text=album)
         audio.tags['TCMP'] = TCMP(encoding=3, text='1')
         audio.tags['TPE2'] = TPE2(encoding=3, text='Various Artists')
-        audio.tags.delall('TRCK')  # Remove track number
+        audio.tags['TRCK'] = TRCK(encoding=3, text=str(track_num))
         audio.tags.delall('TPOS')  # Remove disc number
+        audio.tags.delall('TSRC')  # Remove ISRC
+        audio.tags.delall('TIT1')  # Remove grouping
+        audio.tags.delall('COMM')  # Remove comments
+        for desc in ('DISCTOTAL', 'TOTALDISCS', 'TRACKTOTAL', 'TOTALTRACKS',
+                     'BARCODE', 'UPC', 'ISRC'):
+            audio.tags.delall(f'TXXX:{desc}')
 
         if not dry_run:
             audio.save()
@@ -100,7 +118,7 @@ def set_wav_tags(filepath: Path, album: str, dry_run: bool) -> bool:
         return False
 
 
-def set_aiff_tags(filepath: Path, album: str, dry_run: bool) -> bool:
+def set_aiff_tags(filepath: Path, album: str, track_num: int, dry_run: bool) -> bool:
     """Set tags for AIFF files using ID3."""
     try:
         audio = AIFF(filepath)
@@ -110,8 +128,14 @@ def set_aiff_tags(filepath: Path, album: str, dry_run: bool) -> bool:
         audio.tags['TALB'] = TALB(encoding=3, text=album)
         audio.tags['TCMP'] = TCMP(encoding=3, text='1')
         audio.tags['TPE2'] = TPE2(encoding=3, text='Various Artists')
-        audio.tags.delall('TRCK')  # Remove track number
+        audio.tags['TRCK'] = TRCK(encoding=3, text=str(track_num))
         audio.tags.delall('TPOS')  # Remove disc number
+        audio.tags.delall('TSRC')  # Remove ISRC
+        audio.tags.delall('TIT1')  # Remove grouping
+        audio.tags.delall('COMM')  # Remove comments
+        for desc in ('DISCTOTAL', 'TOTALDISCS', 'TRACKTOTAL', 'TOTALTRACKS',
+                     'BARCODE', 'UPC', 'ISRC'):
+            audio.tags.delall(f'TXXX:{desc}')
 
         if not dry_run:
             audio.save()
@@ -165,26 +189,27 @@ def process_directory(root_dir: Path, dry_run: bool, skip_folders: list[str] | N
             dirnames.clear()
             continue
 
-        audio_files = [f for f in filenames if Path(f).suffix.lower() in HANDLERS]
+        audio_files = [dirpath / f for f in filenames if Path(f).suffix.lower() in HANDLERS]
 
         if not audio_files:
             continue
+
+        # Sort by file creation time for track numbering
+        audio_files.sort(key=lambda f: f.stat().st_birthtime, reverse=True)
 
         # Convert folder name to "Singles - YEAR MONTH" format
         album_name = parse_folder_name(folder_name)
 
         print(f"\n[{folder_name}] -> \"{album_name}\" ({len(audio_files)} files)")
 
-        for filename in audio_files:
-            filepath = dirpath / filename
-            ext = filepath.suffix.lower()
-            handler = HANDLERS.get(ext)
+        for track_num, filepath in enumerate(audio_files, start=1):
+            handler = HANDLERS.get(filepath.suffix.lower())
 
             if handler:
                 action = "Would set" if dry_run else "Setting"
-                print(f"  {action}: {filename[:60]}...")
+                print(f"  {action} #{track_num}: {filepath.name[:60]}...")
 
-                if handler(filepath, album_name, dry_run):
+                if handler(filepath, album_name, track_num, dry_run):
                     stats['processed'] += 1
                 else:
                     stats['errors'] += 1
@@ -208,15 +233,18 @@ def process_single_folder(folder_path: Path, dry_run: bool = False) -> dict:
     if not audio_files:
         return stats
 
+    # Sort by file creation time for track numbering
+    audio_files.sort(key=lambda f: f.stat().st_birthtime, reverse=True)
+
     album_name = parse_folder_name(folder_name)
     print(f"\n[{folder_name}] -> \"{album_name}\" ({len(audio_files)} files)")
 
-    for filepath in audio_files:
+    for track_num, filepath in enumerate(audio_files, start=1):
         handler = HANDLERS.get(filepath.suffix.lower())
         if handler:
             action = "Would set" if dry_run else "Setting"
-            print(f"  {action}: {filepath.name[:60]}...")
-            if handler(filepath, album_name, dry_run):
+            print(f"  {action} #{track_num}: {filepath.name[:60]}...")
+            if handler(filepath, album_name, track_num, dry_run):
                 stats['processed'] += 1
             else:
                 stats['errors'] += 1

@@ -1,0 +1,37 @@
+{
+  "name": "@dj-tools/rekordbox",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Low-level Rekordbox XML library for querying tracks, playlists, and collection data",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "echo \"No tests specified\" && exit 0",
+    "cli": "node dist/cli.js"
+  },
+  "bin": {
+    "rekordbox": "./dist/cli.js"
+  },
+  "keywords": ["rekordbox", "dj", "playlists", "tracks", "pioneer"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.1.0",
+    "dotenv": "^16.4.5",
+    "commander": "^12.1.0"
+  }
+}

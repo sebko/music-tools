@@ -36,10 +36,15 @@ class SinglesFolderHandler(FileSystemEventHandler):
         self.debounce_seconds = debounce_seconds
         self.dry_run = dry_run
         self._pending: dict[Path, threading.Timer] = {}
+        self._processing: set[Path] = set()  # folders currently being processed
         self._lock = threading.Lock()
+        self._file_mtimes: dict[Path, float] = {}  # track mtime to ignore spurious events
 
     def _get_target_folder(self, path: str) -> Path | None:
-        """Return the immediate child folder of root_dir that contains this path, or None."""
+        """Return the folder containing this audio file, if it's within root_dir's hierarchy.
+
+        Supports both flat (root/month/file) and nested (root/year/month/file) layouts.
+        """
         file_path = Path(path)
 
         # Must be a file with an audio extension
@@ -50,15 +55,19 @@ class SinglesFolderHandler(FileSystemEventHandler):
         if file_path.name.startswith('.'):
             return None
 
-        # The parent must be an immediate child of root_dir
+        # Walk up to find how the file relates to root_dir
         parent = file_path.parent
-        if parent == self.root_dir:
-            return None  # File directly in root, not in a subfolder
-        if parent.parent != self.root_dir:
-            return None  # Nested too deep
+        try:
+            rel = parent.relative_to(self.root_dir)
+        except ValueError:
+            return None  # Not under root_dir
 
-        # Skip hidden folders
-        if parent.name.startswith('.'):
+        depth = len(rel.parts)
+        if depth < 1 or depth > 2:
+            return None  # File directly in root, or nested too deep
+
+        # Skip hidden folders anywhere in the path
+        if any(part.startswith('.') for part in rel.parts):
             return None
 
         return parent
@@ -71,11 +80,24 @@ class SinglesFolderHandler(FileSystemEventHandler):
         if folder is None:
             return
 
-        log(f"Detected: {Path(event.src_path).name} in {folder.name}")
+        file_path = Path(event.src_path)
+
+        # Ignore spurious events by checking if mtime actually changed
+        try:
+            mtime = file_path.stat().st_mtime
+        except OSError:
+            return  # File disappeared
+        last_mtime = self._file_mtimes.get(file_path)
+        if last_mtime == mtime:
+            return  # Spurious event, mtime unchanged
+        self._file_mtimes[file_path] = mtime
+
+        log(f"Detected: {file_path.name} in {folder.name}")
 
         with self._lock:
-            if folder in self._pending:
-                self._pending[folder].cancel()
+            # Don't schedule if this folder is already being processed or already pending
+            if folder in self._processing or folder in self._pending:
+                return
 
             timer = threading.Timer(self.debounce_seconds, self._process_folder, args=[folder])
             timer.daemon = True
@@ -91,9 +113,19 @@ class SinglesFolderHandler(FileSystemEventHandler):
     def on_moved(self, event):
         self._handle_event(event)
 
+    def _snapshot_mtimes(self, folder_path: Path):
+        """Record current mtimes for all audio files in folder so our own writes are ignored."""
+        for f in folder_path.iterdir():
+            if f.suffix.lower() in AUDIO_EXTENSIONS and not f.name.startswith('.'):
+                try:
+                    self._file_mtimes[f] = f.stat().st_mtime
+                except OSError:
+                    pass
+
     def _process_folder(self, folder_path: Path):
         with self._lock:
             self._pending.pop(folder_path, None)
+            self._processing.add(folder_path)
 
         mode = "DRY RUN" if self.dry_run else "LIVE"
         log(f"Processing {folder_path.name} ({mode})...")
@@ -111,6 +143,12 @@ class SinglesFolderHandler(FileSystemEventHandler):
         except Exception:
             log(f"Error generating art for {folder_path.name}:")
             traceback.print_exc()
+
+        # Snapshot mtimes after processing so events from our own writes are ignored
+        self._snapshot_mtimes(folder_path)
+
+        with self._lock:
+            self._processing.discard(folder_path)
 
         log(f"Done with {folder_path.name}, watching...")
 

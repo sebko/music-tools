@@ -19,6 +19,9 @@
   "references": [
     {
       "path": "./packages/youtube-tracklist"
+    },
+    {
+      "path": "./packages/rekordbox"
     }
   ]
 }
