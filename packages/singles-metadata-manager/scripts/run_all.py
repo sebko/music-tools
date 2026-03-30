@@ -9,6 +9,7 @@ from pathlib import Path
 
 from set_album_tags import process_directory as set_tags
 from generate_album_art import process_directory as generate_art
+from scan_progress import ScanProgress
 
 
 def main():
@@ -39,32 +40,36 @@ def main():
         sys.exit(1)
 
     mode = "DRY RUN" if args.dry_run else "LIVE"
+    progress = ScanProgress()
 
-    # Step 1: Set album tags
-    print(f"=== Step 1: Album Tag Updater ({mode}) ===")
-    print(f"Root: {root_dir}")
-    if args.skip:
-        print(f"Skipping folders: {', '.join(args.skip)}")
-    tag_stats = set_tags(root_dir, args.dry_run, args.skip or None)
+    try:
+        # Step 1: Set album tags
+        print(f"=== Step 1: Album Tag Updater ({mode}) ===")
+        print(f"Root: {root_dir}")
+        if args.skip:
+            print(f"Skipping folders: {', '.join(args.skip)}")
+        tag_stats = set_tags(root_dir, args.dry_run, args.skip or None, progress=progress)
 
-    print(f"\nTag results: {tag_stats['processed']} processed, "
-          f"{tag_stats['errors']} errors, {tag_stats['skipped']} skipped")
+        print(f"\nTag results: {tag_stats['processed']} processed, "
+              f"{tag_stats['errors']} errors, {tag_stats['skipped']} skipped")
 
-    # Step 2: Generate and embed album art
-    print(f"\n=== Step 2: Album Art Generator ({mode}) ===")
-    print(f"Root: {root_dir}")
-    art_stats = generate_art(root_dir, args.dry_run, args.skip or None)
+        # Step 2: Generate and embed album art
+        print(f"\n=== Step 2: Album Art Generator ({mode}) ===")
+        print(f"Root: {root_dir}")
+        art_stats = generate_art(root_dir, args.dry_run, args.skip or None, progress=progress)
 
-    print(f"\nArt results: {art_stats['processed']} processed, "
-          f"{art_stats['errors']} errors, {art_stats['skipped']} skipped")
+        print(f"\nArt results: {art_stats['processed']} processed, "
+              f"{art_stats['errors']} errors, {art_stats['skipped']} skipped")
 
-    # Combined summary
-    print(f"\n=== Combined Summary ===")
-    print(f"Tags:    {tag_stats['processed']} processed, {tag_stats['errors']} errors")
-    print(f"Artwork: {art_stats['processed']} processed, {art_stats['errors']} errors")
+        # Combined summary
+        print(f"\n=== Combined Summary ===")
+        print(f"Tags:    {tag_stats['processed']} processed, {tag_stats['errors']} errors")
+        print(f"Artwork: {art_stats['processed']} processed, {art_stats['errors']} errors")
 
-    if args.dry_run:
-        print("\nThis was a dry run. Run without --dry-run to apply changes.")
+        if args.dry_run:
+            print("\nThis was a dry run. Run without --dry-run to apply changes.")
+    finally:
+        progress.finish()
 
 
 if __name__ == '__main__':

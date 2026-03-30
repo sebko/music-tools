@@ -23,15 +23,23 @@
   "bin": {
     "rekordbox": "./dist/cli.js"
   },
-  "keywords": ["rekordbox", "dj", "playlists", "tracks", "pioneer"],
+  "keywords": [
+    "rekordbox",
+    "dj",
+    "playlists",
+    "tracks",
+    "pioneer"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "fast-xml-parser": "^5.1.0",
+    "@anthropic-ai/sdk": "^0.27.3",
+    "better-sqlite3-multiple-ciphers": "^12.8.0",
+    "commander": "^12.1.0",
     "dotenv": "^16.4.5",
-    "commander": "^12.1.0"
+    "fast-xml-parser": "^5.1.0"
   }
 }

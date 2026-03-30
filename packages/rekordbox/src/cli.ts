@@ -1,30 +1,22 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import dotenv from 'dotenv';
 import { RekordboxLibrary } from './rekordbox-library.js';
 import type { RekordboxNode, RekordboxTrack } from './types.js';
 
 dotenv.config({ path: '../../.env' });
 
-const DEFAULT_XML_PATH = join(
-  homedir(),
-  'Library/Pioneer/rekordbox/rekordbox.xml',
-);
-
-function getXmlPath(options: { xmlPath?: string }): string {
-  return (
-    options.xmlPath ??
-    process.env.REKORDBOX_XML_PATH ??
-    DEFAULT_XML_PATH
-  );
-}
-
-async function loadLibrary(options: { xmlPath?: string }) {
-  const xmlPath = getXmlPath(options);
-  return RekordboxLibrary.load(xmlPath);
+async function loadLibrary(options: {
+  xmlPath?: string;
+  dbPath?: string;
+}): Promise<RekordboxLibrary> {
+  if (options.xmlPath) {
+    return RekordboxLibrary.loadFromXml(options.xmlPath);
+  }
+  const dbPath =
+    options.dbPath ?? process.env.REKORDBOX_DB_PATH ?? undefined;
+  return RekordboxLibrary.loadFromDb(dbPath);
 }
 
 function formatTrackRow(t: RekordboxTrack): string {
@@ -49,11 +41,12 @@ const program = new Command();
 
 program
   .name('rekordbox')
-  .description('Query your Rekordbox XML library')
+  .description('Query your Rekordbox library')
   .version('1.0.0')
+  .option('--xml-path <path>', 'Path to rekordbox.xml export file')
   .option(
-    '--xml-path <path>',
-    'Path to rekordbox.xml export file',
+    '--db-path <path>',
+    'Path to master.db (default: ~/Library/Pioneer/rekordbox/master.db)',
   );
 
 program
@@ -62,8 +55,6 @@ program
   .action(async (_opts, cmd) => {
     try {
       const lib = await loadLibrary(cmd.optsWithGlobals());
-      const data = lib.getRawData();
-      console.log(`Product: ${data.product.name} ${data.product.version}`);
       console.log(`Tracks: ${lib.getTrackCount()}`);
       console.log(`Playlists: ${lib.getPlaylists().length}`);
     } catch (err) {
@@ -104,7 +95,9 @@ program
       const tracks = lib.getTracksInPlaylist(playlist);
 
       if (tracks.length === 0) {
-        console.log(`No tracks found (playlist "${playlist}" not found or empty)`);
+        console.log(
+          `No tracks found (playlist "${playlist}" not found or empty)`,
+        );
         return;
       }
 
@@ -176,16 +169,24 @@ program
       if (result.identical) {
         console.log('Playlists are identical.');
       } else if (result.aContainsB) {
-        console.log(`"${result.playlistA}" contains all tracks from "${result.playlistB}".`);
+        console.log(
+          `"${result.playlistA}" contains all tracks from "${result.playlistB}".`,
+        );
       } else if (result.bContainsA) {
-        console.log(`"${result.playlistB}" contains all tracks from "${result.playlistA}".`);
+        console.log(
+          `"${result.playlistB}" contains all tracks from "${result.playlistA}".`,
+        );
       } else {
         console.log('Playlists partially overlap.');
       }
 
       console.log(`\nShared: ${result.intersection.length} tracks`);
-      console.log(`Only in ${result.playlistA}: ${result.onlyInA.length} tracks`);
-      console.log(`Only in ${result.playlistB}: ${result.onlyInB.length} tracks`);
+      console.log(
+        `Only in ${result.playlistA}: ${result.onlyInA.length} tracks`,
+      );
+      console.log(
+        `Only in ${result.playlistB}: ${result.onlyInB.length} tracks`,
+      );
 
       if (opts.showTracks) {
         if (result.onlyInA.length > 0) {
@@ -240,6 +241,61 @@ program
           console.log();
         }
       }
+    } catch (err) {
+      console.error(`Error: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('query')
+  .argument('<question>', 'Natural language question about your library')
+  .description('Ask Claude a question about your Rekordbox library')
+  .action(async (question, _opts, cmd) => {
+    try {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const lib = await loadLibrary(cmd.optsWithGlobals());
+
+      const playlists = lib.getPlaylists();
+      const playlistSummary = playlists
+        .map((p) => `- ${p.path} (${p.trackKeys.length} tracks)`)
+        .join('\n');
+
+      const playlistDetails = playlists
+        .map((p) => {
+          const tracks = lib.getTracksInPlaylist(p.name);
+          const trackList = tracks
+            .map(
+              (t) =>
+                `  ${t.artist} - ${t.name} [${t.averageBpm.toFixed(1)} BPM, ${t.tonality || '?'}]`,
+            )
+            .join('\n');
+          return `### ${p.path} (${tracks.length} tracks)\n${trackList}`;
+        })
+        .join('\n\n');
+
+      const systemPrompt = `You are a DJ library assistant. The user has a Rekordbox collection with ${lib.getTrackCount()} tracks and ${playlists.length} playlists.
+
+Here are the playlists and their contents:
+
+${playlistDetails}
+
+Answer the user's question about their library. Be concise and direct.`;
+
+      const client = new Anthropic();
+      const response = await client.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: question }],
+      });
+
+      const text = response.content
+        .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+        .map((b) => b.text)
+        .join('');
+
+      console.log(text);
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);

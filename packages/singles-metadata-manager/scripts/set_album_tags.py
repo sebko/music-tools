@@ -170,11 +170,33 @@ def parse_folder_name(folder_name: str) -> str:
     return f"Singles - {folder_name}"
 
 
-def process_directory(root_dir: Path, dry_run: bool, skip_folders: list[str] | None = None) -> dict:
+def _count_audio_folders(root_dir: Path, skip_set: set[str]) -> int:
+    """Quick pre-scan to count folders containing audio files."""
+    count = 0
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        dirpath = Path(dirpath)
+        name = dirpath.name
+        if dirpath == root_dir or name.startswith('.'):
+            continue
+        if name in skip_set:
+            dirnames.clear()
+            continue
+        if any(Path(f).suffix.lower() in HANDLERS for f in filenames):
+            count += 1
+    return count
+
+
+def process_directory(root_dir: Path, dry_run: bool, skip_folders: list[str] | None = None,
+                      progress=None) -> dict:
     """Walk directory and update all audio files."""
     stats = {'processed': 0, 'skipped': 0, 'errors': 0}
     skip_set = set(skip_folders) if skip_folders else set()
 
+    if progress:
+        total = _count_audio_folders(root_dir, skip_set)
+        progress.start(total, phase="tags")
+
+    folders_done = 0
     for dirpath, dirnames, filenames in os.walk(root_dir):
         dirpath = Path(dirpath)
         folder_name = dirpath.name
@@ -202,6 +224,9 @@ def process_directory(root_dir: Path, dry_run: bool, skip_folders: list[str] | N
 
         print(f"\n[{folder_name}] -> \"{album_name}\" ({len(audio_files)} files)")
 
+        if progress:
+            progress.update(folder_name, folders_done, 0, len(audio_files))
+
         for track_num, filepath in enumerate(audio_files, start=1):
             handler = HANDLERS.get(filepath.suffix.lower())
 
@@ -213,8 +238,12 @@ def process_directory(root_dir: Path, dry_run: bool, skip_folders: list[str] | N
                     stats['processed'] += 1
                 else:
                     stats['errors'] += 1
+                if progress:
+                    progress.update(folder_name, folders_done, track_num, len(audio_files))
             else:
                 stats['skipped'] += 1
+
+        folders_done += 1
 
     return stats
 

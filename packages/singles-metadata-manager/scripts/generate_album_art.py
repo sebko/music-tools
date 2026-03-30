@@ -192,12 +192,17 @@ HANDLERS = {
 }
 
 
-def process_directory(root_dir: Path, dry_run: bool, skip_folders: list[str] | None = None) -> dict:
+def process_directory(root_dir: Path, dry_run: bool, skip_folders: list[str] | None = None,
+                      progress=None) -> dict:
     """Walk directory and embed album art in all audio files."""
     stats = {'processed': 0, 'skipped': 0, 'errors': 0}
     art_cache = {}  # Cache generated art per folder
     skip_set = set(skip_folders) if skip_folders else set()
 
+    if progress:
+        progress.set_phase("art")
+
+    folders_done = 0
     for dirpath, dirnames, filenames in os.walk(root_dir):
         dirpath = Path(dirpath)
         folder_name = dirpath.name
@@ -221,11 +226,15 @@ def process_directory(root_dir: Path, dry_run: bool, skip_folders: list[str] | N
         art_text = parse_folder_name(folder_name)
         print(f"\n[{folder_name}] -> \"{art_text}\" ({len(audio_files)} files)")
 
+        if progress:
+            progress.update(folder_name, folders_done, 0, len(audio_files))
+
         # Generate or retrieve cached art
         if art_text not in art_cache:
             art_cache[art_text] = generate_album_art(art_text)
         art_data = art_cache[art_text]
 
+        file_num = 0
         for filename in audio_files:
             filepath = dirpath / filename
             ext = filepath.suffix.lower()
@@ -242,8 +251,13 @@ def process_directory(root_dir: Path, dry_run: bool, skip_folders: list[str] | N
                         stats['errors'] += 1
                 else:
                     stats['processed'] += 1
+                file_num += 1
+                if progress:
+                    progress.update(folder_name, folders_done, file_num, len(audio_files))
             else:
                 stats['skipped'] += 1
+
+        folders_done += 1
 
     return stats
 

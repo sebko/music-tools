@@ -1,4 +1,5 @@
 import { parseRekordboxXml } from './xml-parser.js';
+import { readRekordboxDb } from './db-reader.js';
 import type {
   RekordboxTrack,
   RekordboxPlaylist,
@@ -15,9 +16,21 @@ export class RekordboxLibrary {
     this.data = data;
   }
 
-  static async load(xmlPath: string): Promise<RekordboxLibrary> {
+  static async loadFromXml(xmlPath: string): Promise<RekordboxLibrary> {
     const data = await parseRekordboxXml(xmlPath);
     return new RekordboxLibrary(data);
+  }
+
+  static loadFromDb(dbPath?: string): RekordboxLibrary {
+    const data = readRekordboxDb(dbPath);
+    return new RekordboxLibrary(data);
+  }
+
+  static async load(pathOrDb?: string): Promise<RekordboxLibrary> {
+    if (pathOrDb?.endsWith('.xml')) {
+      return RekordboxLibrary.loadFromXml(pathOrDb);
+    }
+    return RekordboxLibrary.loadFromDb(pathOrDb);
   }
 
   // --- Track access ---
@@ -45,14 +58,21 @@ export class RekordboxLibrary {
   }
 
   getPlaylistByName(name: string): RekordboxPlaylist | undefined {
-    return this.data.playlists.find(
-      (p) => p.name.toLowerCase() === name.toLowerCase(),
+    // Try exact match first, then case-insensitive
+    return (
+      this.data.playlists.find((p) => p.name === name) ??
+      this.data.playlists.find(
+        (p) => p.name.toLowerCase() === name.toLowerCase(),
+      )
     );
   }
 
   getPlaylistByPath(path: string): RekordboxPlaylist | undefined {
-    return this.data.playlists.find(
-      (p) => p.path.toLowerCase() === path.toLowerCase(),
+    return (
+      this.data.playlists.find((p) => p.path === path) ??
+      this.data.playlists.find(
+        (p) => p.path.toLowerCase() === path.toLowerCase(),
+      )
     );
   }
 
