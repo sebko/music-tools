@@ -1,0 +1,139 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum MatchStatus {
+  UNMATCHED
+  MATCHED
+  SYNCED
+}
+
+model Album {
+  id              String   @id // SHA256 hash of file_path - stable across Plex rescans
+  plexRatingKey   String   @unique @map("plex_rating_key") // Current Plex ID for API calls
+  filePath        String   @map("file_path") // Album directory path from Plex
+  title           String   // Album title for grid display
+  artist          String   // Artist name for grid display
+
+  // Sortable fields from Plex
+  year            Int?     // Release year for sorting
+  addedAt         DateTime? @map("added_at") // When added to Plex
+  titleSort       String?  @map("title_sort") // Sortable title (for proper alphabetical)
+  genre           String?  // Primary genre for filtering
+  folderCreatedAt DateTime? @map("folder_created_at") // Filesystem folder creation date
+
+  // Artwork dimensions (populated during library scan)
+  artworkWidth    Int?     @map("artwork_width")
+  artworkHeight   Int?     @map("artwork_height")
+
+  // Match status tracking
+  matchStatus     MatchStatus @default(UNMATCHED) @map("match_status")
+  syncedAt        DateTime?   @map("synced_at")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  metadataMatches  AlbumMetadataServiceMatch[]
+  plexFileSync     PlexFileSync?
+  redactedPlexSync RedactedPlexSync?
+  syncFailures     SyncFailure[]
+
+  @@map("albums")
+}
+
+model MetadataService {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique // e.g., "musicbrainz", "allmusic", "lastfm"
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  albumMatches AlbumMetadataServiceMatch[]
+
+  @@map("metadata_services")
+}
+
+model AlbumMetadataServiceMatch {
+  id                Int      @id @default(autoincrement())
+  albumId           String   @map("album_id")
+  metadataServiceId Int      @map("metadata_service_id")
+  externalId        String   @map("external_id") // ID in external service
+
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  // Relations
+  album             Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  metadataService   MetadataService @relation(fields: [metadataServiceId], references: [id], onDelete: Cascade)
+
+  @@unique([albumId, metadataServiceId, externalId])
+  @@map("album_metadata_service_matches")
+}
+
+model PlexFileSync {
+  id              Int      @id @default(autoincrement())
+  albumId         String   @unique @map("album_id")
+
+  // Track which fields were synced (JSON for flexibility)
+  // e.g. {"genre": true, "title": false, "artist": false, ...}
+  syncedFields    String   @default("{}") @map("synced_fields")
+
+  // When last synced
+  lastSyncedAt    DateTime @map("last_synced_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relation
+  album           Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+  @@map("plex_file_syncs")
+}
+
+model RedactedPlexSync {
+  id              Int      @id @default(autoincrement())
+  albumId         String   @unique @map("album_id")
+
+  // Track which fields were synced from Redacted to Plex (JSON for flexibility)
+  // e.g. {"title": true, "year": true, "tags": true, "artwork": false, ...}
+  syncedFields    String   @default("{}") @map("synced_fields")
+
+  // When last synced
+  lastSyncedAt    DateTime @map("last_synced_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relation
+  album           Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+  @@map("redacted_plex_syncs")
+}
+
+model SyncFailure {
+  id          Int      @id @default(autoincrement())
+  albumId     String   @map("album_id")
+  operation   String   // "bulk_scan" | "bulk_sync_plex" | "bulk_sync_files"
+  error       String   // Error message
+  details     String?  // JSON with extra context (file path, API response, etc.)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relation
+  album       Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+  @@map("sync_failures")
+}
+
+model PlexSettings {
+  id          String   @id @default("singleton")
+  token       String?
+  serverName  String?  @map("server_name")
+  libraryName String?  @map("library_name")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("plex_settings")
+}

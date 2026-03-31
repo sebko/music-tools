@@ -1,0 +1,39 @@
+# Wrangler configuration for Redacted API Caching Worker
+# Documentation: https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "redacted-cache"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Worker type
+workers_dev = true
+
+# KV Namespace binding for rate limiting
+# After creating KV namespace in Cloudflare dashboard, add the ID here
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "33c2a187632342748c172dc794dfa32c"
+
+# Routes (configure after deployment)
+# [[routes]]
+# pattern = "redacted-cache.YOUR-ACCOUNT.workers.dev/*"
+# zone_name = "your-domain.com"
+
+# Environment variables (if needed - currently all config is in worker.js)
+# [vars]
+# RATE_LIMIT_REQUESTS = "10"
+# RATE_LIMIT_WINDOW = "10"
+
+# Deployment configuration
+[build]
+command = ""  # No build step needed for this simple worker
+
+[env.production]
+workers_dev = false
+
+[env.staging]
+workers_dev = true
+
+# Observability
+[observability]
+enabled = true

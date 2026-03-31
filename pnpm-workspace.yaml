@@ -1,2 +1,4 @@
 packages:
   - 'packages/*'
+  - 'packages/music-tagger/frontend'
+  - 'packages/music-tagger/backend'

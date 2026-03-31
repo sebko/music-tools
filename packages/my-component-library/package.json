@@ -1,0 +1,40 @@
+{
+  "name": "@dj-tools/my-component-library",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "main": "dist/my-component-library.js",
+  "module": "dist/my-component-library.js",
+  "exports": {
+    ".": {
+      "import": "./dist/my-component-library.js"
+    },
+    "./styles": "./src/styles/base.css",
+    "./tailwind-preset": "./src/tailwind/preset.js"
+  },
+  "files": [
+    "dist",
+    "src/tailwind",
+    "src/styles"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.3.1",
+    "lucide-react": "^0.544.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^7.1.2",
+    "tailwindcss": "^3.4.17",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6"
+  }
+}
