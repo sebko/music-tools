@@ -1,1 +1,1 @@
-../packages/music-tagger/.claude/commands/validate.md
+../../packages/music-tagger/.claude/commands/validate.md

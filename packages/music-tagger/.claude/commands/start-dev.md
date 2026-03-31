@@ -14,12 +14,12 @@ Start both development servers for the music-tagger application.
 
 2. Start the backend server in the background:
    ```bash
-   cd ${CLAUDE_SKILL_DIR}/../.. && cd backend && npm run dev
+   cd packages/music-tagger/backend && npm run dev
    ```
 
 3. Start the frontend server in the background:
    ```bash
-   cd ${CLAUDE_SKILL_DIR}/../.. && cd frontend && npm run dev
+   cd packages/music-tagger/frontend && npm run dev
    ```
 
 4. Wait 3 seconds, then verify both servers are running by checking ports 3001 and 5173 with `lsof`.

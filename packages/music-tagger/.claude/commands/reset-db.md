@@ -33,7 +33,7 @@ When executed, Claude will perform the following steps:
 Claude will ensure it's in the correct directory:
 
 ```bash
-cd /Users/sebastiankey/github/music-tagger/backend
+cd packages/music-tagger/backend
 ```
 
 ### Step 2: Run the database reset script

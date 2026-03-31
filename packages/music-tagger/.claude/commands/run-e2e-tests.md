@@ -32,6 +32,9 @@ ARGS_LOWER=$(echo "$ARGS" | tr '[:upper:]' '[:lower:]')
 
 echo "🧪 Starting E2E tests..."
 
+# Navigate to music-tagger directory
+cd packages/music-tagger
+
 # Check if servers are running
 if ! curl -s http://localhost:3001/health > /dev/null 2>&1; then
     echo "❌ Backend server not running on port 3001"

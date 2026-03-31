@@ -1,1 +1,1 @@
-../packages/music-tagger/.claude/commands/reset-db.md
+../../packages/music-tagger/.claude/commands/reset-db.md

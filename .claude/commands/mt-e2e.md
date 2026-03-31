@@ -1,1 +1,1 @@
-../packages/music-tagger/.claude/commands/run-e2e-tests.md
+../../packages/music-tagger/.claude/commands/run-e2e-tests.md

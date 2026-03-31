@@ -1,1 +1,1 @@
-../packages/music-tagger/.claude/commands/cleanup-tasks.md
+../../packages/music-tagger/.claude/commands/cleanup-tasks.md

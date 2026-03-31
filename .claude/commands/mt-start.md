@@ -1,1 +1,1 @@
-../packages/music-tagger/.claude/commands/start-dev.md
+../../packages/music-tagger/.claude/commands/start-dev.md
