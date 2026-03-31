@@ -6,6 +6,6 @@ export default {
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
-    "../../node_modules/@dj-tools/my-component-library/dist/**/*.js",
+    "./node_modules/@dj-tools/my-component-library/dist/**/*.js",
   ],
 };
