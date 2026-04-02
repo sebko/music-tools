@@ -5,5 +5,6 @@ export default {
   presets: [neobrutalistPreset],
   content: [
     "./src/**/*.{js,jsx}",
+    "./.storybook/**/*.{js,jsx}",
   ],
 };

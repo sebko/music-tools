@@ -3,8 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { useAlbum } from "../hooks/useAlbum";
 import { Button, cn } from "@dj-tools/my-component-library";
 import Lightbox from "../components/Lightbox";
-import ArtworkSearchModal from "../components/ArtworkSearchModal";
-import { ArrowLeft, Music, ZoomIn, Search } from "lucide-react";
+import { ArrowLeft, Music, ZoomIn } from "lucide-react";
 import { formatRedactedTags } from "../utils/formatters";
 
 /**
@@ -73,10 +72,6 @@ function MatchMetadataPage() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
-  // Artwork search modal state
-  const [artworkModalOpen, setArtworkModalOpen] = useState(false);
-  const [_selectedArtwork, _setSelectedArtwork] = useState(null);
-
   // Apply metadata state
   const [isApplying, setIsApplying] = useState(false);
 
@@ -108,11 +103,6 @@ function MatchMetadataPage() {
       fetchRedactedData();
     }
   }, [groupId]);
-
-  const handleArtworkSelect = (artworkData) => {
-    _setSelectedArtwork(artworkData);
-    console.log('Artwork selected:', artworkData);
-  };
 
   if (localLoading || isLoadingMT) {
     return (
@@ -235,24 +225,6 @@ function MatchMetadataPage() {
                   className="w-full h-full object-cover rounded-base border-2 border-main shadow-main"
                 />
                 <div className="absolute top-2 right-2 flex gap-2">
-                  <button
-                    className={cn(
-                      "p-1.5 rounded-base",
-                      "bg-black/60 text-white backdrop-blur-sm",
-                      "opacity-0 group-hover:opacity-100 transition-all duration-200",
-                      "hover:bg-black/80 hover:scale-110",
-                      "focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-main focus:ring-offset-2",
-                      "w-7 h-7 flex items-center justify-center"
-                    )}
-                    aria-label="Search for artwork"
-                    title="Search for artwork"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setArtworkModalOpen(true);
-                    }}
-                  >
-                    <Search className="w-3 h-3" />
-                  </button>
                   <button
                     className={cn(
                       "p-1.5 rounded-base",
@@ -438,13 +410,6 @@ function MatchMetadataPage() {
         />
       )}
 
-      {/* Artwork Search Modal */}
-      <ArtworkSearchModal
-        isOpen={artworkModalOpen}
-        onClose={() => setArtworkModalOpen(false)}
-        albumId={id}
-        onSelectArtwork={handleArtworkSelect}
-      />
     </div>
   );
 }
