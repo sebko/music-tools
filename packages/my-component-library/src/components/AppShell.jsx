@@ -28,23 +28,25 @@ function AppShell({
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-6">
               {brandElement || (
-                <h1 className="text-xl font-heading text-foreground">{brandName}</h1>
-              )}
-              {navigation && (
-                <nav className="flex items-center gap-2">
-                  {navigation}
-                </nav>
+                <h1 className="text-xl font-heading text-foreground">
+                  {brandName}
+                </h1>
               )}
             </div>
-            {actions && (
-              <div className="flex items-center gap-3">
-                {actions}
-              </div>
-            )}
+            <div className="flex  gap-6">
+              {navigation && (
+                <nav className="flex items-center gap-2">{navigation}</nav>
+              )}
+              {actions && (
+                <div className="flex items-center gap-3">{actions}</div>
+              )}
+            </div>
           </div>
         </div>
       </header>
-      <main className={cn("mx-auto py-6 px-4 sm:px-6 lg:px-8 2xl:px-16", maxWidth)}>
+      <main
+        className={cn("mx-auto py-6 px-4 sm:px-6 lg:px-8 2xl:px-16", maxWidth)}
+      >
         {children}
       </main>
     </div>

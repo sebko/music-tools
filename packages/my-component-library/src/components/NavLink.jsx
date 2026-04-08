@@ -12,7 +12,7 @@ import { cn } from "../lib/utils";
  */
 function NavLink({ isActive = false, asChild = false, className, children, ...props }) {
   const navClasses = cn(
-    "px-4 py-2 rounded-base font-heading text-sm",
+    "px-4 py-2 rounded-base font-heading",
     "border-2 border-border shadow-light",
     "hover:shadow-base hover:-translate-x-0.5 hover:-translate-y-0.5",
     "active:shadow-none active:translate-x-0 active:translate-y-0",

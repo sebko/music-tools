@@ -1,0 +1,12 @@
+{
+  "name": "@dj-tools/metadata-manager",
+  "version": "1.0.0",
+  "description": "Local music file metadata manager - view and organize ID3/Vorbis tags",
+  "scripts": {
+    "kill:backend": "lsof -ti:3002 | xargs kill -9 2>/dev/null || true",
+    "kill:frontend": "lsof -ti:5174 | xargs kill -9 2>/dev/null || true",
+    "dev:backend": "pnpm run kill:backend && cd backend && pnpm run dev",
+    "dev:frontend": "pnpm run kill:frontend && cd frontend && pnpm run dev",
+    "build": "cd frontend && pnpm run build"
+  }
+}

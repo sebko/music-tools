@@ -8,7 +8,21 @@ import ScanProgressModal from "../components/ScanProgressModal";
 import BulkScanProgressModal from "../components/BulkScanProgressModal";
 import BulkSyncFieldsModal from "../components/BulkSyncFieldsModal";
 import BulkSyncProgressModal from "../components/BulkSyncProgressModal";
-import { PageLoader, SelectBrutalist, FilterToggle, Button, cn } from "@dj-tools/my-component-library";
+import {
+  PageLoader,
+  SelectBrutalist,
+  FilterToggle,
+  Button,
+  cn,
+  PageHeader,
+  Toolbar,
+  SearchInput,
+  CardGrid,
+  MediaCard,
+  Badge,
+  Pagination,
+  EmptyState,
+} from "@dj-tools/my-component-library";
 import LightboxWithNavigation from "../components/LightboxWithNavigation";
 import UnmatchedView from "../components/UnmatchedView";
 import MatchedView from "../components/MatchedView";
@@ -18,10 +32,7 @@ import {
   Search,
   ArrowUp,
   ArrowDown,
-  ChevronLeft,
-  ChevronRight,
   ZoomIn,
-  X,
   RefreshCw,
 } from "lucide-react";
 
@@ -123,12 +134,12 @@ function AlbumsPage() {
     }
   }, [isSyncing]);
 
-  // Handle search form submission
-  const handleSearchSubmit = (e) => {
-    e.preventDefault();
+  // Handle search submission (SearchInput passes value string)
+  const handleSearchSubmitValue = (val) => {
+    const trimmed = (val || searchInput).trim();
     const newParams = Object.fromEntries(searchParams.entries());
-    if (searchInput.trim()) {
-      newParams.search = searchInput.trim();
+    if (trimmed) {
+      newParams.search = trimmed;
     } else {
       delete newParams.search;
     }
@@ -246,40 +257,33 @@ function AlbumsPage() {
     // Show different message if searching with no results
     if (searchQuery) {
       mainContent = (
-        <div className="text-center py-12">
-          <div className="mb-4">
-            <Search className="w-16 h-16 mx-auto text-foreground/30" />
-          </div>
-          <h2 className="text-xl font-heading text-foreground mb-2">
-            No results for "{searchQuery}"
-          </h2>
-          <p className="text-foreground/60 mb-6">
-            Try adjusting your search terms or clear the search to see all
-            albums.
-          </p>
-          <Button onClick={handleClearSearch} variant="primary" size="lg">
-            Clear Search
-          </Button>
-        </div>
+        <EmptyState
+          icon={<Search className="w-16 h-16" />}
+          heading={`No results for "${searchQuery}"`}
+          description="Try adjusting your search terms or clear the search to see all albums."
+          action={
+            <Button onClick={handleClearSearch} variant="primary" size="lg">
+              Clear Search
+            </Button>
+          }
+        />
       );
     } else {
       // Show different empty states based on match filter
       if (matchFilter === 'unmatched') {
         mainContent = (
-          <div className="flex-col py-12 justify-center text-center">
-            <div className="mb-4">
-              <Music className="w-16 h-16 mx-auto text-main animate-pulse" />
-            </div>
-            <h2 className="text-xl font-heading text-foreground mb-2">No albums yet</h2>
-            <p className="text-foreground/60 mb-6">
-              Connect your Plex library to import albums.
-            </p>
-            <Link to="/settings">
-              <Button variant="primary" size="lg">
-                Connect Plex
-              </Button>
-            </Link>
-          </div>
+          <EmptyState
+            icon={<Music className="w-16 h-16 text-main animate-pulse" />}
+            heading="No albums yet"
+            description="Connect your Plex library to import albums."
+            action={
+              <Link to="/settings">
+                <Button variant="primary" size="lg">
+                  Connect Plex
+                </Button>
+              </Link>
+            }
+          />
         );
       } else if (matchFilter === 'matched') {
         mainContent = <MatchedView />;
@@ -288,7 +292,7 @@ function AlbumsPage() {
   } else {
     mainContent = (
       <>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-8 gap-6">
+        <CardGrid>
           {albums.map((album, indexInPage) => {
             // Matched and synced albums go to sync page; unmatched go to details page
             const linkPath = ((album.matchStatus === 'MATCHED' || album.matchStatus === 'SYNCED') && album.redactedId)
@@ -297,55 +301,28 @@ function AlbumsPage() {
 
             return (
               <Link key={album.id} to={linkPath}>
-                <div
-                  className={cn(
-                    "card-brutalist transition-all duration-200 group",
-                    "hover:shadow-main hover:border-main hover:-translate-x-1 hover:-translate-y-1",
-                    "active:shadow-none active:translate-x-0 active:translate-y-0"
-                  )}
-                >
-                  <div className="aspect-square bg-background-secondary rounded-base mb-3 flex items-center justify-center overflow-hidden border-2 border-border relative">
-                    {album.hasArtwork && album.artworkThumbUrl ? (
-                      <img
-                        src={album.artworkThumbUrl}
-                        alt={album.title}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.target.style.display = "none";
-                          e.target.nextSibling.style.display = "block";
-                        }}
-                      />
-                    ) : null}
-                    <div
-                      className="text-foreground/30"
-                      style={{ display: album.hasArtwork && album.artworkThumbUrl ? "none" : "block" }}
-                    >
-                      <Music className="w-10 h-10" />
-                    </div>
-
-                    {/* MusicBrainz badge - top-left */}
-                    {album.hasMusicBrainzMatch && (
-                      <div
-                        className={cn(
-                          "absolute top-2 left-2 px-1.5 py-0.5 rounded-sm",
-                          "bg-blue-600/90 text-white backdrop-blur-sm",
-                          "text-[10px] font-bold tracking-wide",
-                          "border border-blue-400/30"
-                        )}
-                        title="Has MusicBrainz metadata"
-                      >
-                        MB
-                      </div>
-                    )}
-
-                    {/* Zoom icon for fullscreen artwork - only show if artwork exists */}
-                    {album.hasArtwork && (
+                <MediaCard
+                  imageSrc={album.hasArtwork && album.artworkThumbUrl ? album.artworkThumbUrl : undefined}
+                  imageAlt={album.title}
+                  title={album.title || "Unknown Album"}
+                  subtitle={album.artist || "Unknown Artist"}
+                  badges={
+                    <>
+                      {album.hasMusicBrainzMatch && (
+                        <Badge variant="info" position="top-left" title="Has MusicBrainz metadata">
+                          MB
+                        </Badge>
+                      )}
+                      {album.redactedId && <AlbumCardBadges album={album} />}
+                    </>
+                  }
+                  actions={
+                    album.hasArtwork && (
                       <button
                         onClick={(e) => handleViewArtwork(e, indexInPage)}
                         className={cn(
                           "absolute top-2 right-2 p-1.5 rounded-base",
                           "bg-black/60 text-white backdrop-blur-sm",
-                          "opacity-0 group-hover:opacity-100 transition-all duration-200",
                           "hover:bg-black/80 hover:scale-110",
                           "focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-main focus:ring-offset-2",
                           "w-7 h-7 flex items-center justify-center"
@@ -355,50 +332,22 @@ function AlbumsPage() {
                       >
                         <ZoomIn className="w-3 h-3" />
                       </button>
-                    )}
-
-                    {/* Sync status and artwork quality badges */}
-                    {album.redactedId && <AlbumCardBadges album={album} />}
-                  </div>
-                  <h3 className="font-heading text-foreground truncate">
-                    {album.title || "Unknown Album"}
-                  </h3>
-                  <p className="text-sm text-foreground/60 truncate">
-                    {album.artist || "Unknown Artist"}
-                  </p>
-                </div>
+                    )
+                  }
+                />
               </Link>
             );
           })}
-        </div>
+        </CardGrid>
 
         {/* Pagination Controls */}
         {pagination.pages > 1 && (
-          <div className="flex justify-center items-center space-x-4 mt-8">
-            <Button
-              onClick={() => handlePageChange(pagination.page - 1)}
-              variant={pagination.hasPrev ? "primary" : "secondary"}
-              size="sm"
-              isDisabled={!pagination.hasPrev}
-            >
-              <ChevronLeft className="w-4 h-4" />
-              Previous
-            </Button>
-
-            <span className="text-foreground font-heading">
-              Page {pagination.page} of {pagination.pages}
-            </span>
-
-            <Button
-              onClick={() => handlePageChange(pagination.page + 1)}
-              variant={pagination.hasNext ? "primary" : "secondary"}
-              size="sm"
-              isDisabled={!pagination.hasNext}
-            >
-              Next
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
+          <Pagination
+            currentPage={pagination.page}
+            totalPages={pagination.pages}
+            onPageChange={handlePageChange}
+            className="mt-8"
+          />
         )}
       </>
     );
@@ -406,182 +355,165 @@ function AlbumsPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        {/* Title and subtitle row */}
-        <div className="mb-4">
-          <h1 className="text-2xl font-heading text-foreground">Albums</h1>
-          <p className="text-foreground/60 mt-1">
-            {isError
-              ? "We were unable to load your library. Try running a scan to rebuild it."
-              : pagination.total === 0
-              ? searchQuery
-                ? `No albums found for "${searchQuery}"`
-                : 'No albums found. Use "Scan Library" to import your music.'
-              : searchQuery
-              ? `${pagination.total} albums found for "${searchQuery}" - Page ${pagination.page} of ${pagination.pages}`
-              : `${pagination.total} albums total - Page ${pagination.page} of ${pagination.pages}`}
-          </p>
-        </div>
-
-        {/* Toolbar row: filters on left, actions on right */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          {/* Left side: Primary filter */}
-          <FilterToggle
-            activeFilter={matchFilter}
-            onFilterChange={handleFilterChange}
-            filters={[
-              { key: 'unmatched', label: 'Unmatched' },
-              { key: 'matched', label: 'Matched' },
-              { key: 'synced', label: 'Synced' }
-            ]}
-          />
-
-          {/* Right side: Search and actions */}
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Search Input */}
-            <form onSubmit={handleSearchSubmit} className="relative">
-              <input
-                type="text"
+      <PageHeader
+        title="Albums"
+        subtitle={
+          isError
+            ? "We were unable to load your library. Try running a scan to rebuild it."
+            : pagination.total === 0
+            ? searchQuery
+              ? `No albums found for "${searchQuery}"`
+              : 'No albums found. Use "Scan Library" to import your music.'
+            : searchQuery
+            ? `${pagination.total} albums found for "${searchQuery}" - Page ${pagination.page} of ${pagination.pages}`
+            : `${pagination.total} albums total - Page ${pagination.page} of ${pagination.pages}`
+        }
+      >
+        <Toolbar
+          left={
+            <FilterToggle
+              activeFilter={matchFilter}
+              onFilterChange={handleFilterChange}
+              filters={[
+                { key: 'unmatched', label: 'Unmatched' },
+                { key: 'matched', label: 'Matched' },
+                { key: 'synced', label: 'Synced' }
+              ]}
+            />
+          }
+          right={
+            <div className="flex flex-wrap items-center gap-3">
+              <SearchInput
                 value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
+                onChange={setSearchInput}
+                onSubmit={handleSearchSubmitValue}
+                onClear={handleClearSearch}
                 placeholder="Search albums"
-                className="input-brutalist pl-10 pr-8 w-48"
-                autoComplete="off"
+                className="w-48"
               />
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground/60" />
-              {searchInput && (
-                <button
-                  type="button"
-                  onClick={handleClearSearch}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-foreground/60 hover:text-foreground rounded transition-colors"
-                  title="Clear search"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </form>
 
-            {pagination.total > 0 && (
-              <>
-                <div className="flex items-center gap-2">
-                  <label
-                    htmlFor="limit-select"
-                    className="text-sm font-heading text-foreground"
-                  >
-                    Show:
-                  </label>
-                  <SelectBrutalist
-                    id="limit-select"
-                    value={limit}
-                    onChange={(e) =>
-                      handleLimitChange(parseInt(e.target.value))
-                    }
-                    options={[
-                      { value: 20, label: "20" },
-                      { value: 50, label: "50" },
-                      { value: 100, label: "100" },
-                      { value: 200, label: "200" },
-                    ]}
-                    className="w-20"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <label
-                    htmlFor="sort-select"
-                    className="text-sm font-heading text-foreground"
-                  >
-                    Sort:
-                  </label>
-                  <SelectBrutalist
-                    id="sort-select"
-                    value={sortBy}
-                    onChange={(e) => handleSortChange(e.target.value)}
-                    options={[
-                      { value: "addedAt", label: "Date Added" },
-                      { value: "titleSort", label: "Album Title" },
-                      { value: "year", label: "Release Year" },
-                      { value: "folderCreatedAt", label: "Folder Created" },
-                    ]}
-                    className="w-36"
-                  />
-                  <Button
-                    onClick={() =>
-                      handleSortChange(
-                        sortBy,
-                        sortOrder === "asc" ? "desc" : "asc"
-                      )
-                    }
-                    variant="default"
-                    size="sm"
-                    title={`Sort ${
-                      sortOrder === "asc" ? "descending" : "ascending"
-                    }`}
-                  >
-                    {sortOrder === "asc" ? (
-                      <ArrowUp className="w-4 h-4" />
-                    ) : (
-                      <ArrowDown className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-
-                {/* Rescan button - only show on unmatched filter */}
-                {matchFilter === "unmatched" && (
-                  <Button
-                    onClick={handleStartScan}
-                    variant="primary"
-                    size="sm"
-                    isDisabled={isStartingScan}
-                  >
-                    <Search className="w-4 h-4" />
-                    {isStartingScan ? "Starting..." : "Rescan"}
-                  </Button>
-                )}
-
-                {/* Bulk Scan button - only show on unmatched filter */}
-                {matchFilter === "unmatched" && (
-                  <Button
-                    onClick={async () => {
-                      try {
-                        await startScan.mutateAsync({
-                          minConfidence: 85,
-                          includeMatched: false
-                        });
-                        setShowBulkScanModal(true);
-                      } catch (error) {
-                        console.error("Failed to start bulk scan:", error);
-                        const isAlreadyRunning = error.message?.includes('already in progress');
-                        if (isAlreadyRunning) {
-                          setShowBulkScanModal(true);
-                        }
+              {pagination.total > 0 && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="limit-select"
+                      className="text-sm font-heading text-foreground"
+                    >
+                      Show:
+                    </label>
+                    <SelectBrutalist
+                      id="limit-select"
+                      value={limit}
+                      onChange={(e) =>
+                        handleLimitChange(parseInt(e.target.value))
                       }
-                    }}
-                    variant="secondary"
-                    size="sm"
-                    isDisabled={isScanning || startScan.isPending}
-                  >
-                    <Search className="w-4 h-4" />
-                    {startScan.isPending ? "Starting..." : "Bulk Scan"}
-                  </Button>
-                )}
+                      options={[
+                        { value: 20, label: "20" },
+                        { value: 50, label: "50" },
+                        { value: 100, label: "100" },
+                        { value: 200, label: "200" },
+                      ]}
+                      className="w-20"
+                    />
+                  </div>
 
-                {/* Bulk Sync button - only show on matched filter */}
-                {matchFilter === "matched" && (
-                  <Button
-                    onClick={() => setShowBulkSyncFieldsModal(true)}
-                    variant="primary"
-                    size="sm"
-                    isDisabled={isSyncing || startSync.isPending}
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    {isSyncing ? "Syncing..." : "Bulk Sync"}
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="sort-select"
+                      className="text-sm font-heading text-foreground"
+                    >
+                      Sort:
+                    </label>
+                    <SelectBrutalist
+                      id="sort-select"
+                      value={sortBy}
+                      onChange={(e) => handleSortChange(e.target.value)}
+                      options={[
+                        { value: "addedAt", label: "Date Added" },
+                        { value: "titleSort", label: "Album Title" },
+                        { value: "year", label: "Release Year" },
+                        { value: "folderCreatedAt", label: "Folder Created" },
+                      ]}
+                      className="w-36"
+                    />
+                    <Button
+                      onClick={() =>
+                        handleSortChange(
+                          sortBy,
+                          sortOrder === "asc" ? "desc" : "asc"
+                        )
+                      }
+                      variant="default"
+                      size="sm"
+                      title={`Sort ${
+                        sortOrder === "asc" ? "descending" : "ascending"
+                      }`}
+                    >
+                      {sortOrder === "asc" ? (
+                        <ArrowUp className="w-4 h-4" />
+                      ) : (
+                        <ArrowDown className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Rescan button - only show on unmatched filter */}
+                  {matchFilter === "unmatched" && (
+                    <Button
+                      onClick={handleStartScan}
+                      variant="primary"
+                      size="sm"
+                      isDisabled={isStartingScan}
+                    >
+                      <Search className="w-4 h-4" />
+                      {isStartingScan ? "Starting..." : "Rescan"}
+                    </Button>
+                  )}
+
+                  {/* Bulk Scan button - only show on unmatched filter */}
+                  {matchFilter === "unmatched" && (
+                    <Button
+                      onClick={async () => {
+                        try {
+                          await startScan.mutateAsync({
+                            minConfidence: 85,
+                            includeMatched: false
+                          });
+                          setShowBulkScanModal(true);
+                        } catch (error) {
+                          console.error("Failed to start bulk scan:", error);
+                          const isAlreadyRunning = error.message?.includes('already in progress');
+                          if (isAlreadyRunning) {
+                            setShowBulkScanModal(true);
+                          }
+                        }
+                      }}
+                      variant="secondary"
+                      size="sm"
+                      isDisabled={isScanning || startScan.isPending}
+                    >
+                      <Search className="w-4 h-4" />
+                      {startScan.isPending ? "Starting..." : "Bulk Scan"}
+                    </Button>
+                  )}
+
+                  {/* Bulk Sync button - only show on matched filter */}
+                  {matchFilter === "matched" && (
+                    <Button
+                      onClick={() => setShowBulkSyncFieldsModal(true)}
+                      variant="primary"
+                      size="sm"
+                      isDisabled={isSyncing || startSync.isPending}
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      {isSyncing ? "Syncing..." : "Bulk Sync"}
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+          }
+        />
 
         {/* Secondary filter row - only show when synced tab is active */}
         {matchFilter === "synced" && (
@@ -597,7 +529,7 @@ function AlbumsPage() {
             />
           </div>
         )}
-      </div>
+      </PageHeader>
 
       {mainContent}
 
@@ -701,32 +633,16 @@ function AlbumCardBadges({ album }) {
     <>
       {/* Sync status badge - bottom-right */}
       {syncStatus?.allSynced && (
-        <div
-          className={cn(
-            "absolute bottom-2 right-2 px-1.5 py-0.5 rounded-sm",
-            "bg-green-600/90 text-white backdrop-blur-sm",
-            "text-[10px] font-bold tracking-wide",
-            "border border-green-400/30"
-          )}
-          title="All fields synced"
-        >
+        <Badge variant="success" position="bottom-right" title="All fields synced">
           ✓
-        </div>
+        </Badge>
       )}
 
       {/* HD artwork badge - bottom-left (uses server-side calculated status) */}
       {album.isHdArtwork && (
-        <div
-          className={cn(
-            "absolute bottom-2 left-2 px-1.5 py-0.5 rounded-sm",
-            "bg-purple-600/90 text-white backdrop-blur-sm",
-            "text-[10px] font-bold tracking-wide",
-            "border border-purple-400/30"
-          )}
-          title="High-resolution artwork (≥1400×1400)"
-        >
+        <Badge variant="accent" position="bottom-left" title="High-resolution artwork (≥1400×1400)">
           HD
-        </div>
+        </Badge>
       )}
     </>
   );

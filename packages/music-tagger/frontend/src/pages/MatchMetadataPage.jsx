@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useAlbum } from "../hooks/useAlbum";
-import { Button, cn } from "@dj-tools/my-component-library";
+import { Button, cn, EmptyState } from "@dj-tools/my-component-library";
 import Lightbox from "../components/Lightbox";
 import { ArrowLeft, Music, ZoomIn } from "lucide-react";
 import { formatRedactedTags } from "../utils/formatters";
@@ -114,30 +114,34 @@ function MatchMetadataPage() {
 
   if (error) {
     return (
-      <div className="text-center py-12">
-        <h2 className="text-xl font-heading text-foreground mb-4">Error Loading Data</h2>
-        <p className="text-foreground/60 mb-4">{error}</p>
-        <Button variant="secondary" size="sm" asChild>
-          <Link to={`/albums/${id}/metadata-search`}>
-            <ArrowLeft className="h-4 w-4" />
-            Back to Search
-          </Link>
-        </Button>
-      </div>
+      <EmptyState
+        heading="Error Loading Data"
+        description={error}
+        action={
+          <Button variant="secondary" size="sm" asChild>
+            <Link to={`/albums/${id}/metadata-search`}>
+              <ArrowLeft className="h-4 w-4" />
+              Back to Search
+            </Link>
+          </Button>
+        }
+      />
     );
   }
 
   if (!localAlbum || !redactedData) {
     return (
-      <div className="text-center py-12">
-        <h2 className="text-xl font-heading text-foreground mb-2">Data not found</h2>
-        <Button variant="secondary" size="sm" asChild>
-          <Link to={`/albums/${id}/metadata-search`}>
-            <ArrowLeft className="h-4 w-4" />
-            Back to Search
-          </Link>
-        </Button>
-      </div>
+      <EmptyState
+        heading="Data not found"
+        action={
+          <Button variant="secondary" size="sm" asChild>
+            <Link to={`/albums/${id}/metadata-search`}>
+              <ArrowLeft className="h-4 w-4" />
+              Back to Search
+            </Link>
+          </Button>
+        }
+      />
     );
   }
 

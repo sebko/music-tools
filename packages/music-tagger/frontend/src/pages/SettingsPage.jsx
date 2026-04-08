@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { CheckCircle, XCircle, Loader2 } from "lucide-react";
-import { cn, Button } from "@dj-tools/my-component-library";
+import { cn, Button, PageHeader } from "@dj-tools/my-component-library";
 import { pollPlexOAuth } from "../api/settings";
 import {
   usePlexSettings,
@@ -122,9 +122,7 @@ function SettingsPage() {
 
   return (
     <div className="max-w-2xl">
-      <div className="mb-6">
-        <h1 className="text-3xl font-heading text-foreground">Settings</h1>
-      </div>
+      <PageHeader title="Settings" />
 
       {/* Plex Connection Card */}
       <div className="bg-background-secondary border-2 border-border rounded-base p-6 shadow-base">

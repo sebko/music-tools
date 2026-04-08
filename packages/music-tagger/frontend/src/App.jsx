@@ -1,21 +1,21 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { ThemeProvider } from '@dj-tools/my-component-library';
-import { useHueRotation } from './hooks/useHueRotation';
-import Layout from './components/Layout';
-import AlbumsPage from './pages/AlbumsPage';
-import AlbumDetailPage from './pages/AlbumDetailPage';
-import AlbumMetadataSearchPage from './pages/AlbumMetadataSearchPage';
-import MatchMetadataPage from './pages/MatchMetadataPage';
-import SyncMetadataPage from './pages/SyncMetadataPage';
-import SyncToFilesPage from './pages/SyncToFilesPage';
-import SyncToFilesDetailPage from './pages/SyncToFilesDetailPage';
-import SyncFailuresPage from './pages/SyncFailuresPage';
-import FilesToPlexPage from './pages/FilesToPlexPage';
-import SettingsPage from './pages/SettingsPage';
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { ThemeProvider } from "@dj-tools/my-component-library";
+import { useHueRotation } from "./hooks/useHueRotation";
+import Layout from "./components/Layout";
+import AlbumsPage from "./pages/AlbumsPage";
+import AlbumDetailPage from "./pages/AlbumDetailPage";
+import AlbumMetadataSearchPage from "./pages/AlbumMetadataSearchPage";
+import MatchMetadataPage from "./pages/MatchMetadataPage";
+import SyncMetadataPage from "./pages/SyncMetadataPage";
+import SyncToFilesPage from "./pages/SyncToFilesPage";
+import SyncToFilesDetailPage from "./pages/SyncToFilesDetailPage";
+import SyncFailuresPage from "./pages/SyncFailuresPage";
+import FilesToPlexPage from "./pages/FilesToPlexPage";
+import SettingsPage from "./pages/SettingsPage";
 
 function App() {
   // Start the quirky hue rotation animation
-  useHueRotation();
+  // useHueRotation();
 
   return (
     <ThemeProvider>

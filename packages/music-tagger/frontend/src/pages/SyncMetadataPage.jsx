@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useAlbum } from "../hooks/useAlbum";
 import { useAlbumNavigation } from "../hooks/useAlbumNavigation";
-import { Button, cn } from "@dj-tools/my-component-library";
+import { Button, cn, EmptyState } from "@dj-tools/my-component-library";
 import Lightbox from "../components/Lightbox";
 import ArtworkSearchModal from "../components/ArtworkSearchModal";
 import { MetadataRow, GenreStylesRow, InfoTagRow } from "../components/metadata";
@@ -198,26 +198,30 @@ function SyncMetadataPage() {
 
   if (error) {
     return (
-      <div className="text-center py-12">
-        <h2 className="text-xl font-heading text-foreground mb-4">Error Loading Data</h2>
-        <p className="text-foreground/60 mb-4">{error}</p>
-        <Button variant="secondary" size="sm" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Button>
-      </div>
+      <EmptyState
+        heading="Error Loading Data"
+        description={error}
+        action={
+          <Button variant="secondary" size="sm" onClick={() => navigate(-1)}>
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+        }
+      />
     );
   }
 
   if (!localAlbum || !redactedData) {
     return (
-      <div className="text-center py-12">
-        <h2 className="text-xl font-heading text-foreground mb-2">Data not found</h2>
-        <Button variant="secondary" size="sm" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Button>
-      </div>
+      <EmptyState
+        heading="Data not found"
+        action={
+          <Button variant="secondary" size="sm" onClick={() => navigate(-1)}>
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+        }
+      />
     );
   }
 

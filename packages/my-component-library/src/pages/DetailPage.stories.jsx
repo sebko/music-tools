@@ -61,6 +61,12 @@ export const Default = {
               />
             </div>
           }
+          footer={
+            <div className="mt-8">
+              <h2 className="text-lg font-heading text-foreground mb-4">Tracks</h2>
+              <TrackList tracks={tracks} />
+            </div>
+          }
         >
           <h1 className="text-2xl font-heading text-foreground">Selected Ambient Works 85-92</h1>
           <h3 className="text-lg text-foreground/60 mt-1">Aphex Twin</h3>
@@ -91,11 +97,6 @@ export const Default = {
             <TagPill label="Techno" />
           </div>
         </DetailLayout>
-
-        <div className="card-brutalist p-6">
-          <h2 className="text-lg font-heading text-foreground mb-4">Tracks</h2>
-          <TrackList tracks={tracks} />
-        </div>
       </div>
     </AppShell>
   ),

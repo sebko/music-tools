@@ -38,7 +38,7 @@ function MediaCard({
         className
       )}
     >
-      <div className="aspect-square relative overflow-hidden rounded-t-[3px]">
+      <div className="aspect-square bg-background-secondary rounded-base mb-3 flex items-center justify-center overflow-hidden border-2 border-border relative">
         {showImage ? (
           <img
             src={imageSrc}
@@ -58,13 +58,11 @@ function MediaCard({
           </div>
         )}
       </div>
-      <div className="p-3">
-        <h3 className="font-heading text-sm text-foreground truncate">{title}</h3>
-        {subtitle && (
-          <p className="text-xs text-foreground/60 truncate mt-0.5">{subtitle}</p>
-        )}
-        {children}
-      </div>
+      <h3 className="font-heading text-foreground truncate">{title}</h3>
+      {subtitle && (
+        <p className="text-sm text-foreground/60 truncate">{subtitle}</p>
+      )}
+      {children}
     </div>
   );
 }

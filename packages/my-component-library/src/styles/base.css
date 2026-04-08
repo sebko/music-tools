@@ -1,6 +1,8 @@
 /* Neobrutalist Design System - CSS Custom Properties */
 /* Import this file in your app's CSS before @tailwind directives */
 
+@import '../assets/fonts/fonts.css';
+
 :root {
   /* Light theme */
   --background: 93.46% 0.0304 254.32;
@@ -25,4 +27,15 @@
   --main-hover: 75% 0.18 259.61;
   --main-foreground: 92.49% 0 0;
   --destructive: 65% 0.25 25;
+}
+
+/* Base defaults — applied automatically for all consumers */
+html {
+  font-family: PragmataPro, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+body {
+  background-color: oklch(var(--background));
+  color: oklch(var(--foreground));
+  font-weight: 500;
 }

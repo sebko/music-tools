@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useSyncFailures, useFailureCounts, useClearSyncFailures } from "../hooks/useSyncFailures";
-import { PageLoader, Button, FilterToggle, cn } from "@dj-tools/my-component-library";
+import { PageLoader, Button, FilterToggle, cn, PageHeader, Toolbar, EmptyState } from "@dj-tools/my-component-library";
 import {
   AlertCircle,
   CheckCircle,
@@ -62,80 +62,69 @@ function SyncFailuresPage() {
 
   if (isError) {
     return (
-      <div className="text-center py-12">
-        <AlertCircle className="w-16 h-16 mx-auto text-red-500 mb-4" />
-        <h2 className="text-xl font-heading text-foreground mb-2">
-          Error loading failures
-        </h2>
-        <p className="text-foreground/60">{error?.message}</p>
-      </div>
+      <EmptyState
+        icon={<AlertCircle className="w-16 h-16 text-red-500" />}
+        heading="Error loading failures"
+        description={error?.message}
+      />
     );
   }
 
   return (
     <div>
-      <div className="mb-6">
-        {/* Title and subtitle row */}
-        <div className="mb-4">
-          <h1 className="text-2xl font-heading text-foreground">
-            Sync Failures
-          </h1>
-          <p className="text-foreground/60 mt-1">
-            {totalCount} total failures
-          </p>
-        </div>
-
-        {/* Toolbar row: filters on left, actions on right */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          {/* Left side: Filter toggles */}
-          <FilterToggle
-            activeFilter={operationFilter}
-            onFilterChange={setOperationFilter}
-            filters={[
-              { key: "all", label: `All (${totalCount})` },
-              { key: "bulk_scan", label: `Scan (${counts.bulk_scan || 0})` },
-              { key: "bulk_sync_plex", label: `Plex (${counts.bulk_sync_plex || 0})` },
-              { key: "bulk_sync_files", label: `Files (${counts.bulk_sync_files || 0})` },
-            ]}
-          />
-
-          {/* Right side: Actions */}
-          <div className="flex gap-2">
-            <Button
-              onClick={() => refetch()}
-              variant="secondary"
-              size="sm"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Refresh
-            </Button>
-            {totalCount > 0 && (
+      <PageHeader
+        title="Sync Failures"
+        subtitle={`${totalCount} total failures`}
+      >
+        <Toolbar
+          left={
+            <FilterToggle
+              activeFilter={operationFilter}
+              onFilterChange={setOperationFilter}
+              filters={[
+                { key: "all", label: `All (${totalCount})` },
+                { key: "bulk_scan", label: `Scan (${counts.bulk_scan || 0})` },
+                { key: "bulk_sync_plex", label: `Plex (${counts.bulk_sync_plex || 0})` },
+                { key: "bulk_sync_files", label: `Files (${counts.bulk_sync_files || 0})` },
+              ]}
+            />
+          }
+          right={
+            <div className="flex gap-2">
               <Button
-                onClick={handleClearAll}
+                onClick={() => refetch()}
                 variant="secondary"
                 size="sm"
-                isDisabled={clearMutation.isPending}
               >
-                <Trash2 className="w-4 h-4" />
-                Clear All
+                <RefreshCw className="w-4 h-4" />
+                Refresh
               </Button>
-            )}
-          </div>
-        </div>
-      </div>
+              {totalCount > 0 && (
+                <Button
+                  onClick={handleClearAll}
+                  variant="secondary"
+                  size="sm"
+                  isDisabled={clearMutation.isPending}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Clear All
+                </Button>
+              )}
+            </div>
+          }
+        />
+      </PageHeader>
 
       {failures.length === 0 ? (
-        <div className="text-center py-12">
-          <CheckCircle className="w-16 h-16 mx-auto text-green-500 mb-4" />
-          <h2 className="text-xl font-heading text-foreground mb-2">
-            No failures
-          </h2>
-          <p className="text-foreground/60">
-            {operationFilter === "all"
+        <EmptyState
+          icon={<CheckCircle className="w-16 h-16 text-green-500" />}
+          heading="No failures"
+          description={
+            operationFilter === "all"
               ? "All sync operations completed successfully."
-              : `No ${OPERATION_LABELS[operationFilter]} failures found.`}
-          </p>
-        </div>
+              : `No ${OPERATION_LABELS[operationFilter]} failures found.`
+          }
+        />
       ) : (
         <div className="space-y-4">
           {failures.map((failure) => (

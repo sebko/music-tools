@@ -3,6 +3,9 @@ node_modules/
 .pnp
 .pnp.js
 
+# TypeScript build info
+*.tsbuildinfo
+
 # Production builds
 dist/
 build/

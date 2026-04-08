@@ -1,0 +1,1 @@
+../../packages/beets-ai/.claude/commands/beets-status.md

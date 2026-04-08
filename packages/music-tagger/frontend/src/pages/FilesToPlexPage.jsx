@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRestoreDatesPreview, useApplyRestoreDates } from "../hooks/useRestoreDates";
-import { Button } from "@dj-tools/my-component-library";
+import { Button, PageHeader } from "@dj-tools/my-component-library";
 import { AlertTriangle, CheckCircle, RefreshCw } from "lucide-react";
 
 function FilesToPlexPage() {
@@ -38,16 +38,10 @@ function FilesToPlexPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-heading text-foreground">
-          Files → Plex Sync
-        </h2>
-        <p className="mt-1 text-foreground/70">
-          Restores folder creation dates (birthtimes) as Plex &quot;Date
-          Added&quot; timestamps. Useful after a Plex library rescan resets all
-          added dates.
-        </p>
-      </div>
+      <PageHeader
+        title="Files → Plex Sync"
+        subtitle="Restores folder creation dates (birthtimes) as Plex &quot;Date Added&quot; timestamps. Useful after a Plex library rescan resets all added dates."
+      />
 
       <div className="flex items-start gap-3 p-4 rounded-base border-2 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20">
         <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" />
