@@ -78,31 +78,6 @@ export function getItem(id) {
   return row ? normalizeItem(row) : null;
 }
 
-export function getDuplicates() {
-  const db = getDb();
-  const sql = `
-    SELECT artist, title, COUNT(*) as count
-    FROM items
-    WHERE artist != '' AND title != ''
-    GROUP BY LOWER(artist), LOWER(title)
-    HAVING count > 1
-    ORDER BY count DESC
-  `;
-  const groups = db.prepare(sql).all();
-
-  return groups.map((group) => {
-    const items = db.prepare(
-      `${BASE_SELECT} WHERE LOWER(artist) = LOWER(?) AND LOWER(title) = LOWER(?) ORDER BY bitrate DESC`
-    ).all(group.artist, group.title);
-    return {
-      artist: group.artist,
-      title: group.title,
-      count: group.count,
-      items: items.map(normalizeItem),
-    };
-  });
-}
-
 export function getAlbums({ page = 1, limit = 50, search = "" } = {}) {
   const db = getDb();
   const offset = (page - 1) * limit;

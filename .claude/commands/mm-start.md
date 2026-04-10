@@ -1,1 +1,0 @@
-../../packages/metadata-manager/.claude/commands/start-dev.md

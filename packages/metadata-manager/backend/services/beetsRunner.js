@@ -1,4 +1,4 @@
-import { execFile } from "child_process";
+import { execFile, spawn } from "child_process";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { homedir } from "os";
@@ -30,6 +30,38 @@ export function runScript(scriptName, args = []) {
       });
     });
     return proc;
+  });
+}
+
+/**
+ * Spawn a beet CLI command and stream stdout/stderr lines via callback.
+ * Used for long-running operations (import, duplicates) where the wizard
+ * wants live progress. Returns { code, stdout, stderr } when the process exits.
+ *
+ * @param {string[]} args
+ * @param {(chunk: string, stream: "stdout" | "stderr") => void} onChunk
+ */
+export function runBeetStreaming(args = [], onChunk = () => {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(BEET_BIN, args, { env: { ...process.env, PYTHONUNBUFFERED: "1" } });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+      onChunk(chunk, "stdout");
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+      onChunk(chunk, "stderr");
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      resolve({ stdout: stdout.trim(), stderr: stderr.trim(), code: code ?? 0 });
+    });
   });
 }
 

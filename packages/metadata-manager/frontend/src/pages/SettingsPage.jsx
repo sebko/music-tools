@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useSettings, useUpdateSetting } from "../hooks/useSettings";
 import {
   PageHeader,
   PageLoader,
   Button,
 } from "@dj-tools/my-component-library";
-import { FolderOpen, Save, Check, AlertCircle } from "lucide-react";
+import { FolderOpen, Save, Check, AlertCircle, Wand2 } from "lucide-react";
 
 function SettingsPage() {
+  const navigate = useNavigate();
   const { data, isLoading } = useSettings();
   const updateSetting = useUpdateSetting();
 
@@ -102,6 +104,26 @@ function SettingsPage() {
               {feedback.message}
             </div>
           )}
+        </div>
+
+        <div className="rounded-base border-base shadow-base bg-background p-6 mt-6">
+          <div className="flex items-center gap-2 mb-2">
+            <Wand2 className="w-5 h-5 text-foreground" />
+            <h2 className="text-lg font-heading text-foreground">
+              Setup Wizard
+            </h2>
+          </div>
+          <p className="text-sm text-foreground/60 mb-4">
+            Re-run the onboarding wizard to wipe and reimport your beets library, clean up unprocessed files, and run plugins.
+          </p>
+          <Button
+            variant="default"
+            size="md"
+            onClick={() => navigate("/setup")}
+          >
+            <Wand2 className="w-4 h-4" />
+            Run setup wizard
+          </Button>
         </div>
       </div>
     </div>

@@ -49,7 +49,8 @@ if (process.env.NODE_ENV === "test") {
     console.log(`🧪 Using test music library: ${process.env.MUSIC_LIBRARY_PATH}`);
   }
 } else {
-  dotenv.config();
+  // override: true ensures our .env wins over values pre-loaded by Prisma client
+  dotenv.config({ override: true });
 }
 
 const app = express();

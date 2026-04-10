@@ -6,10 +6,10 @@ Start both development servers for the metadata-manager application.
 
 ## Steps
 
-1. Kill any existing processes on ports 3002 and 5174:
+1. Kill any existing dev processes for this project (pattern-matched, no hardcoded port numbers):
    ```bash
-   lsof -ti:3002 | xargs kill -9 2>/dev/null || true
-   lsof -ti:5174 | xargs kill -9 2>/dev/null || true
+   pkill -f "nodemon.*metadata-manager/backend" 2>/dev/null || true
+   pkill -f "vite.*metadata-manager/frontend" 2>/dev/null || true
    ```
 
 2. Start the backend server in the background:
@@ -22,6 +22,9 @@ Start both development servers for the metadata-manager application.
    cd packages/metadata-manager/frontend && npm run dev
    ```
 
-4. Wait 3 seconds, then verify both servers are running by checking ports 3002 and 5174 with `lsof`.
+4. Wait 3 seconds, then verify both processes are still running by reading the
+   background task output for the "running on port" / "Local:" startup lines.
+   Do NOT hardcode ports — read the actual log output the servers print.
 
-5. Report which servers are running and which failed.
+5. Report which servers are running and which failed (and the port each
+   actually bound to, taken from the log line — not assumed).
