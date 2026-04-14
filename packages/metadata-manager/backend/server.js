@@ -32,8 +32,10 @@ app.get("/api/albums", (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
     const search = req.query.search || "";
+    const sortBy = req.query.sort || "album";
+    const sortOrder = req.query.sortDirection || "desc";
 
-    const result = getAlbums({ page, limit, search });
+    const result = getAlbums({ page, limit, search, sortBy, sortOrder });
 
     // Add artwork URL to each album group
     result.albums = result.albums.map((album) => ({
@@ -169,7 +171,8 @@ app.get("/api/tracks/stats", (req, res) => {
 // is empty, so untagged files from `-A` imports don't pollute the results.
 // `--full` returns all items in each group (not just the non-canonical ones).
 // Optional `?folders=2014,2015` param scopes the scan to specific year folders
-// via a beets regex path query (path:::2014|2015).
+// via a beets regex path query. Anchors on `/Singles/<year>/` so a "2024"
+// substring inside a song title can't false-match.
 app.get("/api/beets/tracks/duplicates", async (req, res) => {
   try {
     // Tab delimiter — will never appear in a path/title/album. beets Template
@@ -180,7 +183,7 @@ app.get("/api/beets/tracks/duplicates", async (req, res) => {
     if (req.query.folders) {
       const folders = req.query.folders.split(",").map((f) => f.trim()).filter(Boolean);
       if (folders.length > 0) {
-        args.push(`path:::${folders.join("|")}`);
+        args.push(`path::/Singles/(${folders.join("|")})/`);
       }
     }
     const result = await runBeet(args);

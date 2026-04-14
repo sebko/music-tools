@@ -92,7 +92,13 @@ export function getItem(id) {
   return row ? normalizeItem(row) : null;
 }
 
-export function getAlbums({ page = 1, limit = 50, search = "" } = {}) {
+export function getAlbums({
+  page = 1,
+  limit = 50,
+  search = "",
+  sortBy = "album",
+  sortOrder = "desc",
+} = {}) {
   const db = getDb();
   if (!db) {
     return { albums: [], pagination: { page, limit, total: 0, pages: 0, hasNext: false, hasPrev: false } };
@@ -107,6 +113,10 @@ export function getAlbums({ page = 1, limit = 50, search = "" } = {}) {
     params = [`%${search}%`];
   }
 
+  const sortFieldMap = { album: "album" };
+  const orderByField = sortFieldMap[sortBy] || "album";
+  const direction = sortOrder?.toLowerCase() === "desc" ? "DESC" : "ASC";
+
   const countSql = `SELECT COUNT(DISTINCT album) as total FROM items ${whereClause}`;
   const { total } = db.prepare(countSql).get(...params);
 
@@ -115,7 +125,7 @@ export function getAlbums({ page = 1, limit = 50, search = "" } = {}) {
     FROM items
     ${whereClause}
     GROUP BY album
-    ORDER BY album
+    ORDER BY ${orderByField} COLLATE NOCASE ${direction}
     LIMIT ? OFFSET ?
   `;
   const albums = db.prepare(sql).all(...params, limit, offset);

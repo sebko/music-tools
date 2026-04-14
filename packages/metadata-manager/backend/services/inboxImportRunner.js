@@ -1,7 +1,7 @@
 import { spawn } from "child_process";
-import { dirname, join, basename, resolve as resolvePath } from "path";
+import { dirname, join, basename, extname, resolve as resolvePath } from "path";
 import { fileURLToPath } from "url";
-import { existsSync, renameSync, mkdirSync } from "fs";
+import { existsSync, renameSync, mkdirSync, copyFileSync, unlinkSync } from "fs";
 import Database from "better-sqlite3";
 import { getBeetsLibraryDbPath } from "./beetsConfig.js";
 import { runBeetStreaming } from "./beetsRunner.js";
@@ -45,16 +45,16 @@ function countItemsInFolders(folders) {
   }
 }
 
-function uniqueYearFolders(paths, libraryRoot) {
+function uniqueMonthFolders(paths, libraryRoot) {
   const libRoot = resolvePath(libraryRoot);
-  const years = new Set();
+  const months = new Set();
   for (const p of paths) {
     if (!p.startsWith(libRoot + "/")) continue;
     const rel = p.slice(libRoot.length + 1);
     const parts = rel.split("/");
-    if (parts.length >= 2) years.add(parts[0]);
+    if (parts.length >= 3) months.add(join(parts[0], parts[1]));
   }
-  return [...years].map((y) => join(libRoot, y));
+  return [...months].map((m) => join(libRoot, m));
 }
 
 // Stream a child process line-by-line, invoking onLine for each complete line.
@@ -134,6 +134,45 @@ function parseImportProgressLine(line) {
 const ANSI_CSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const stripAnsi = (s) => s.replace(ANSI_CSI_RE, "");
 
+const LOSSY_TO_MP3 = new Set([".ogg", ".opus", ".aac", ".m4a", ".wma"]);
+const LOSSLESS_TO_FLAC = new Set([".wav", ".aiff", ".aif"]);
+
+function classifyForConversion(ext) {
+  const e = ext.toLowerCase();
+  if (LOSSY_TO_MP3.has(e)) return "mp3";
+  if (LOSSLESS_TO_FLAC.has(e)) return "flac";
+  return null;
+}
+
+function pickUniqueDest(destDir, name) {
+  let candidate = join(destDir, name);
+  if (!existsSync(candidate)) return candidate;
+  const ext = extname(name);
+  const stem = name.slice(0, name.length - ext.length);
+  let n = 2;
+  while (existsSync(join(destDir, `${stem} (${n})${ext}`))) n += 1;
+  return join(destDir, `${stem} (${n})${ext}`);
+}
+
+function ffmpegArgs(src, dest, target) {
+  if (target === "mp3") {
+    return [
+      "-hide_banner", "-loglevel", "error", "-y",
+      "-i", src,
+      "-c:a", "libmp3lame", "-b:a", "320k",
+      "-map_metadata", "0", "-id3v2_version", "3",
+      dest,
+    ];
+  }
+  return [
+    "-hide_banner", "-loglevel", "error", "-y",
+    "-i", src,
+    "-c:a", "flac", "-compression_level", "8",
+    "-map_metadata", "0",
+    dest,
+  ];
+}
+
 /**
  * Compute the library month folder path for the current date.
  * Matches existing structure: YYYY/YYYY-MM MonthName (e.g. 2026/2026-04 April).
@@ -162,14 +201,21 @@ function moveFilesToLibrary(files, libraryPath) {
   const moved = [];
   for (const src of files) {
     const dest = join(monthPath, basename(src));
-    renameSync(src, dest);
+    try {
+      renameSync(src, dest);
+    } catch (err) {
+      if (err.code !== "EXDEV") throw err;
+      copyFileSync(src, dest);
+      unlinkSync(src);
+    }
     moved.push(dest);
   }
   return moved;
 }
 
 export function runInboxImport(operationsMap, opId, inboxPath, libraryPath, pendingFiles) {
-  const pendingTotal = pendingFiles.length;
+  let workingFiles = [...pendingFiles];
+  let pendingTotal = workingFiles.length;
   const patch = (delta) => {
     const current = operationsMap.get(opId);
     if (!current) return;
@@ -187,11 +233,64 @@ export function runInboxImport(operationsMap, opId, inboxPath, libraryPath, pend
 
   (async () => {
     try {
+      // ---------- Step -1: convert non-mp3/flac files ----------
+      const needsConversion = [];
+      const passThrough = [];
+      for (const f of workingFiles) {
+        const target = classifyForConversion(extname(f));
+        if (target) needsConversion.push({ src: f, target });
+        else passThrough.push(f);
+      }
+
+      const convertedFiles = [];
+      if (needsConversion.length > 0) {
+        patch({
+          phase: "converting",
+          processed: 0,
+          total: needsConversion.length,
+          currentFile: null,
+        });
+
+        let converted = 0;
+        for (const { src, target } of needsConversion) {
+          const srcBase = basename(src);
+          patch({ processed: converted, currentFile: srcBase });
+          appendOutput(`Converting: ${srcBase} -> .${target}\n`);
+
+          const srcDir = dirname(src);
+          const stem = basename(src, extname(src));
+          const dest = pickUniqueDest(srcDir, `${stem}.${target}`);
+
+          const result = await spawnStream(
+            "ffmpeg",
+            ffmpegArgs(src, dest, target),
+            (line) => {
+              if (line) appendOutput(line);
+            },
+          );
+          if (result.code !== 0) {
+            throw new Error(
+              `ffmpeg failed for ${srcBase} (exit ${result.code}): ${result.stderr || "(no stderr)"}`,
+            );
+          }
+
+          unlinkSync(src);
+          convertedFiles.push(dest);
+          converted += 1;
+          patch({ processed: converted });
+        }
+
+        patch({ currentFile: null });
+      }
+
+      workingFiles = [...passThrough, ...convertedFiles];
+      pendingTotal = workingFiles.length;
+
       // ---------- Step 0: move files into the library ----------
       patch({ phase: "importing", processed: 0, total: pendingTotal, currentFile: null });
 
       const { monthPath } = currentMonthFolder(libraryPath);
-      const movedFiles = moveFilesToLibrary(pendingFiles, libraryPath);
+      const movedFiles = moveFilesToLibrary(workingFiles, libraryPath);
       for (const f of movedFiles) {
         appendOutput(`Moved: ${basename(f)} -> ${monthPath}\n`);
       }
@@ -225,11 +324,11 @@ export function runInboxImport(operationsMap, opId, inboxPath, libraryPath, pend
 
       patch({ processed: pendingTotal, currentFile: null });
 
-      // ---------- Identify year folders touched by the import ----------
+      // ---------- Identify month folders touched by the import ----------
       const newPaths = [...readImportedPaths()].filter((p) => !existingPaths.has(p));
-      const yearFolders = uniqueYearFolders(newPaths, libraryPath);
+      const monthFolders = uniqueMonthFolders(newPaths, libraryPath);
 
-      if (yearFolders.length === 0) {
+      if (monthFolders.length === 0) {
         // Incremental import skipped everything, or paths didn't land where
         // we expected. Nothing for the Python scripts to do — still resync
         // beets in case existing tags drifted, then finish.
@@ -250,19 +349,19 @@ export function runInboxImport(operationsMap, opId, inboxPath, libraryPath, pend
         );
       }
 
-      // Use the full count of items under the affected year folders as the
-      // progress denominator — the Python scripts walk recursively so they'll
-      // touch every file in those years, not just the new ones.
-      const phaseTotal = countItemsInFolders(yearFolders);
+      // Use the full count of items under the affected month folders as the
+      // progress denominator — the Python scripts walk recursively and retag
+      // every file in the folder, not just the newly-added ones.
+      const phaseTotal = countItemsInFolders(monthFolders);
 
       // ---------- Step 2: set_album_tags.py ----------
       patch({ phase: "tagging", processed: 0, total: phaseTotal, currentFile: null });
       let tagProcessed = 0;
 
-      for (const yearFolder of yearFolders) {
+      for (const monthFolder of monthFolders) {
         const result = await spawnStream(
           SINGLES_VENV_PY,
-          [TAG_SCRIPT, yearFolder],
+          [TAG_SCRIPT, monthFolder],
           (line) => {
             appendOutput(line);
             const fn = parsePythonProgressLine(line);
@@ -287,10 +386,10 @@ export function runInboxImport(operationsMap, opId, inboxPath, libraryPath, pend
       patch({ phase: "artwork", processed: 0, total: phaseTotal, currentFile: null });
       let artProcessed = 0;
 
-      for (const yearFolder of yearFolders) {
+      for (const monthFolder of monthFolders) {
         const result = await spawnStream(
           SINGLES_VENV_PY,
-          [ART_SCRIPT, yearFolder],
+          [ART_SCRIPT, monthFolder],
           (line) => {
             appendOutput(line);
             const fn = parsePythonProgressLine(line);

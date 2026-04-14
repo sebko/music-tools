@@ -1,9 +1,17 @@
 const API_BASE = "/api";
 
-export async function fetchAlbums({ page = 1, limit = 50, search = "" }) {
+export async function fetchAlbums({
+  page = 1,
+  limit = 50,
+  search = "",
+  sortBy = "album",
+  sortOrder = "desc",
+}) {
   const params = new URLSearchParams({
     page: page.toString(),
     limit: limit.toString(),
+    sort: sortBy,
+    sortDirection: sortOrder,
   });
 
   if (search) {

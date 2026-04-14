@@ -11,8 +11,9 @@ import {
   MediaCard,
   Pagination,
   EmptyState,
+  Button,
 } from "@dj-tools/my-component-library";
-import { Music, Search } from "lucide-react";
+import { Music, Search, ArrowUp, ArrowDown } from "lucide-react";
 
 function AlbumsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -20,8 +21,10 @@ function AlbumsPage() {
   const limit = parseInt(searchParams.get("limit")) || 50;
   const page = Math.max(1, parseInt(searchParams.get("page")) || 1);
   const searchQuery = searchParams.get("search") || "";
+  const sortBy = searchParams.get("sortBy") || "album";
+  const sortOrder = searchParams.get("sortOrder") || "desc";
 
-  const { data, isLoading, isError } = useAlbums(page, limit, searchQuery);
+  const { data, isLoading, isError } = useAlbums(page, limit, searchQuery, sortBy, sortOrder);
 
   const [searchInput, setSearchInput] = useState(searchQuery);
 
@@ -52,6 +55,14 @@ function AlbumsPage() {
   const handlePageChange = (newPage) => {
     const newParams = Object.fromEntries(searchParams.entries());
     newParams.page = newPage.toString();
+    setSearchParams(newParams);
+  };
+
+  const handleSortChange = (newSortBy, newSortOrder = sortOrder) => {
+    const newParams = Object.fromEntries(searchParams.entries());
+    newParams.sortBy = newSortBy;
+    newParams.sortOrder = newSortOrder;
+    newParams.page = "1";
     setSearchParams(newParams);
   };
 
@@ -156,26 +167,58 @@ function AlbumsPage() {
               />
 
               {pagination.total > 0 && (
-                <div className="flex items-center gap-2">
-                  <label
-                    htmlFor="limit-select"
-                    className="text-sm font-heading text-foreground"
-                  >
-                    Show:
-                  </label>
-                  <SelectBrutalist
-                    id="limit-select"
-                    value={limit}
-                    onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                    options={[
-                      { value: 20, label: "20" },
-                      { value: 50, label: "50" },
-                      { value: 100, label: "100" },
-                      { value: 200, label: "200" },
-                    ]}
-                    className="w-20"
-                  />
-                </div>
+                <>
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="limit-select"
+                      className="text-sm font-heading text-foreground"
+                    >
+                      Show:
+                    </label>
+                    <SelectBrutalist
+                      id="limit-select"
+                      value={limit}
+                      onChange={(e) => handleLimitChange(parseInt(e.target.value))}
+                      options={[
+                        { value: 20, label: "20" },
+                        { value: 50, label: "50" },
+                        { value: 100, label: "100" },
+                        { value: 200, label: "200" },
+                      ]}
+                      className="w-20"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="sort-select"
+                      className="text-sm font-heading text-foreground"
+                    >
+                      Sort:
+                    </label>
+                    <SelectBrutalist
+                      id="sort-select"
+                      value={sortBy}
+                      onChange={(e) => handleSortChange(e.target.value)}
+                      options={[{ value: "album", label: "Album Name" }]}
+                      className="w-36"
+                    />
+                    <Button
+                      onClick={() =>
+                        handleSortChange(sortBy, sortOrder === "asc" ? "desc" : "asc")
+                      }
+                      variant="default"
+                      size="sm"
+                      title={`Sort ${sortOrder === "asc" ? "descending" : "ascending"}`}
+                    >
+                      {sortOrder === "asc" ? (
+                        <ArrowUp className="w-4 h-4" />
+                      ) : (
+                        <ArrowDown className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
+                </>
               )}
             </div>
           }
