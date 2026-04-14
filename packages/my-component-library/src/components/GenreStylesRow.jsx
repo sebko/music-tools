@@ -1,4 +1,5 @@
-import { cn, TagPill } from "@dj-tools/my-component-library";
+import { cn } from "../lib/utils";
+import { TagPill } from "./TagPill";
 
 /**
  * Metadata comparison row for array values (genres, styles, tags)

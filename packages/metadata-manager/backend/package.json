@@ -10,6 +10,7 @@
     "db:generate": "npx prisma generate"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
     "@prisma/client": "^6.17.1",
     "better-sqlite3": "^12.8.0",
     "cors": "^2.8.5",
@@ -17,6 +18,7 @@
     "express": "^5.1.0",
     "js-yaml": "^4.1.1",
     "music-metadata": "^11.9.0",
+    "node-id3tag": "^0.9.8",
     "prisma": "^6.17.1"
   },
   "devDependencies": {

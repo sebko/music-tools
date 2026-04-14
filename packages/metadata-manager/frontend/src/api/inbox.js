@@ -20,3 +20,15 @@ export async function runInboxImport() {
   }
   return response.json();
 }
+
+export async function resumeInboxImport(operationId) {
+  const response = await fetch(`${API_BASE}/inbox/import/${operationId}/resume`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.error || "Failed to resume inbox import");
+  }
+  return response.json();
+}

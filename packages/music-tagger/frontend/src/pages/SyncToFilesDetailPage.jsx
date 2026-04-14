@@ -5,8 +5,8 @@ import { useAlbum } from "../hooks/useAlbum";
 import { useFileMetadata } from "../hooks/useFileMetadata";
 import { useFileSyncNavigation } from "../hooks/useFileSyncNavigation";
 import { syncAlbumToFiles } from "../api/syncToFiles";
-import { Button, cn } from "@dj-tools/my-component-library";
-import { MetadataRow, GenreStylesRow, InfoTagRow, ArtworkRow } from "../components/metadata";
+import { Button, cn, MetadataRow, GenreStylesRow } from "@dj-tools/my-component-library";
+import { InfoTagRow, ArtworkRow } from "../components/metadata";
 import { ArrowLeft, ChevronLeft, ChevronRight, Music } from "lucide-react";
 import {
   PLEX_TO_FILE_SYNCABLE_FIELDS,

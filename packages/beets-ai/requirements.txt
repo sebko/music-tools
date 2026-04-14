@@ -1,5 +1,0 @@
-beets==2.8.0
-requests
-pylast
-mutagen
-anthropic

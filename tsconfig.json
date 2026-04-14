@@ -22,9 +22,6 @@
     },
     {
       "path": "./packages/rekordbox"
-    },
-    {
-      "path": "./packages/beets-ai"
     }
   ]
 }

@@ -1,9 +1,0 @@
-{
-  "name": "@dj-tools/beets-ai",
-  "version": "0.2.0",
-  "description": "Python workspace and Claude Code integration for beets music library management",
-  "private": true,
-  "scripts": {
-    "setup": "bash setup.sh"
-  }
-}

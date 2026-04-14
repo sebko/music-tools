@@ -46,7 +46,7 @@ const ESSENTIAL_PLUGINS = ["musicbrainz", "fetchart", "duplicates", "scrub"];
 // `cannot zero in "as-is" mode` warnings on every Identify (`beet import -L`)
 // fallback even with `auto: no`. The wizard never invokes `beet zero`
 // directly, so removing it from the plugin list is the cleanest fix.
-const STRIP_PLUGINS = new Set(["lastgenre", "wlg", "zero"]);
+const STRIP_PLUGINS = new Set(["wlg", "zero"]);
 
 function parsePluginsList(value) {
   if (Array.isArray(value)) return value.filter(Boolean);
@@ -119,6 +119,20 @@ export async function setBeetsLibraryDirectory(directory) {
   config.scrub = { ...(existing.scrub || {}), auto: false };
   config.fetchart = { ...(existing.fetchart || {}), auto: false };
   config.zero = { ...(existing.zero || {}), auto: false };
+
+  // lastgenre: fetch last.fm genres on-demand from the enrichment service.
+  // auto:false — never runs inside `beet import`; we call it via a helper
+  // script. source:track and min_weight:10 are tuned for singles (per-track
+  // specificity, filter out weak tags). Whitelist defaults to the bundled
+  // genres.txt which keeps exotic/garbage tags out of suggestions.
+  config.lastgenre = {
+    ...(existing.lastgenre || {}),
+    auto: false,
+    source: "track",
+    min_weight: 10,
+    count: 5,
+    title_case: true,
+  };
 
   // Configure the `duplicates` plugin to key on (artist, title) instead of
   // its default (mb_trackid, mb_albumid). The wizard's Duplicates step calls

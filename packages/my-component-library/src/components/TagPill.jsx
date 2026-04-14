@@ -6,17 +6,20 @@ import { cn } from "../lib/utils";
  * @param {string} props.label - Tag text to display
  * @param {boolean} props.isNew - Whether this tag is new/different (highlights in main color)
  * @param {boolean} props.isRemoved - Whether this tag would be removed (highlights in red)
+ * @param {'default'|'warning'} props.variant - Visual variant: default or warning (amber)
  */
-export function TagPill({ label, isNew = false, isRemoved = false }) {
+export function TagPill({ label, isNew = false, isRemoved = false, variant = "default" }) {
   return (
     <span
       className={cn(
         "inline-block rounded-base border-2 px-2 py-0.5 text-xs font-heading",
-        isNew
-          ? "bg-main/10 border-main"
-          : isRemoved
-            ? "bg-red-500/10 border-red-500"
-            : "bg-background-secondary border-border"
+        variant === "warning"
+          ? "bg-amber-500/10 border-amber-500 text-amber-600 dark:text-amber-400"
+          : isNew
+            ? "bg-main/10 border-main"
+            : isRemoved
+              ? "bg-red-500/10 border-red-500"
+              : "bg-background-secondary border-border"
       )}
     >
       {label}

@@ -7,6 +7,8 @@ import sqlite3
 import sys
 
 import anthropic
+from mutagen.flac import FLAC
+from mutagen.id3 import ID3, ID3NoHeaderError, TCON
 
 # Load API key from root .env
 ENV_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".env")
@@ -39,12 +41,43 @@ def get_items(db_path, query=None):
     """Fetch items from beets DB."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    sql = "SELECT id, artist, title, album, genres FROM items"
+    sql = "SELECT id, path, artist, title, album, genres FROM items"
     if query:
         sql += f" WHERE {query}"
     rows = conn.execute(sql).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def write_genres_to_file(raw_path, genres):
+    """Write a multi-value genre list to an audio file using the right
+    per-format encoding for DJ apps that expect real multi-value fields
+    (verified against Pentaton iOS on 2026-04-14).
+
+    MP3  → ID3v2.4 TCON, null-byte separated (mutagen handles this when
+            TCON.text is a list).
+    FLAC → separate Vorbis GENRE= comments (mutagen handles this when
+            audio["genre"] is a list).
+    """
+    path = raw_path.decode("utf-8") if isinstance(raw_path, bytes) else raw_path
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext == ".mp3":
+            try:
+                tags = ID3(path)
+            except ID3NoHeaderError:
+                tags = ID3()
+            tags.delall("TCON")
+            tags.add(TCON(encoding=3, text=genres))
+            tags.save(path, v2_version=4)
+        elif ext == ".flac":
+            audio = FLAC(path)
+            audio["genre"] = genres
+            audio.save()
+        else:
+            print(f"  (skip {path}: unsupported format)")
+    except Exception as exc:
+        print(f"  ERROR writing genres to {path}: {exc}")
 
 
 def build_prompt(items):
@@ -81,23 +114,28 @@ def call_claude(items):
 
 
 def update_genres(db_path, results, dry_run=False):
-    """Write genres back to beets DB."""
+    """Write genres back to beets DB and to the underlying audio files."""
     conn = sqlite3.connect(db_path)
     updated = 0
     for r in results:
-        genre_str = "; ".join(r["genres"])
+        genres = r["genres"]
+        genre_str = "; ".join(genres)
         item_id = r["id"]
+        row = conn.execute(
+            "SELECT path, artist, title FROM items WHERE id = ?", (item_id,)
+        ).fetchone()
         if dry_run:
-            row = conn.execute(
-                "SELECT artist, title FROM items WHERE id = ?", (item_id,)
-            ).fetchone()
-            artist, title = row if row else ("?", "?")
+            artist, title = (row[1], row[2]) if row else ("?", "?")
             print(f"  {artist} - {title} → {genre_str}")
-        else:
-            conn.execute(
-                "UPDATE items SET genres = ? WHERE id = ?", (genre_str, item_id)
-            )
-            updated += 1
+            continue
+
+        # beets keeps its "; "-joined convention internally for display
+        conn.execute(
+            "UPDATE items SET genres = ? WHERE id = ?", (genre_str, item_id)
+        )
+        if row and row[0]:
+            write_genres_to_file(row[0], genres)
+        updated += 1
     if not dry_run:
         conn.commit()
     conn.close()
@@ -130,8 +168,7 @@ def main():
         update_genres(BEETS_DB, results, dry_run)
 
     if not dry_run:
-        print(f"\nDone. Updated {len(items)} tracks.")
-        print("Run 'beet write' to write genres to files.")
+        print(f"\nDone. Updated {len(items)} tracks (DB + files).")
 
 
 if __name__ == "__main__":

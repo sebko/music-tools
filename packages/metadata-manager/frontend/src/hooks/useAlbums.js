@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchAlbums, fetchAlbumTracks } from "../api/albums";
+import { fetchGenreStatus } from "../api/genres";
 
 export function useAlbums(page = 1, limit = 50, search = "", sortBy = "album", sortOrder = "desc") {
   return useQuery({
@@ -16,5 +17,14 @@ export function useAlbumTracks(albumName) {
     queryFn: () => fetchAlbumTracks(albumName),
     enabled: !!albumName,
     staleTime: 30000,
+  });
+}
+
+export function useGenreStatus(trackIds) {
+  return useQuery({
+    queryKey: ["genreStatus", trackIds],
+    queryFn: () => fetchGenreStatus(trackIds),
+    enabled: Array.isArray(trackIds) && trackIds.length > 0,
+    staleTime: 60000,
   });
 }

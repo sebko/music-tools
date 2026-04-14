@@ -1,18 +1,132 @@
-import { spawn } from "child_process";
+import { spawnSync } from "child_process";
 import { dirname, join, basename, extname, resolve as resolvePath } from "path";
-import { fileURLToPath } from "url";
 import { existsSync, renameSync, mkdirSync, copyFileSync, unlinkSync } from "fs";
 import Database from "better-sqlite3";
 import { getBeetsLibraryDbPath } from "./beetsConfig.js";
 import { runBeetStreaming } from "./beetsRunner.js";
+import { enrichTracks as claudeEnrichTracks } from "./trackEnrichmentService.js";
+import { runProcessingPhases } from "./libraryProcessingPipeline.js";
+import {
+  SINGLES_VENV_PY,
+  TAG_SCRIPT,
+  spawnStream,
+  parsePythonProgressLine,
+  parseImportProgressLine,
+  stripAnsi,
+  createOpHelpers,
+} from "./beetsPipelineHelpers.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-// metadata-manager/backend/services/ → dj-tools/packages/singles-metadata-manager/
-const SINGLES_DIR = resolvePath(__dirname, "..", "..", "..", "singles-metadata-manager");
-const SINGLES_VENV_PY = join(SINGLES_DIR, ".venv", "bin", "python");
-const SINGLES_SCRIPTS = join(SINGLES_DIR, "scripts");
-const TAG_SCRIPT = join(SINGLES_SCRIPTS, "set_album_tags.py");
-const ART_SCRIPT = join(SINGLES_SCRIPTS, "generate_album_art.py");
+/**
+ * Run every pipeline phase after Claude enrichment approval. Called either
+ * inline (when enrichment is skipped/failed) or from `resumeInboxImport`
+ * after the user approves the enrichment diff in the UI.
+ *
+ * This is where `beet import` happens — deferred from the pre-review path
+ * so that abandoning the review window leaves NOTHING in the beets library.
+ * Files on disk still sit in their correct month folder (already tagged +
+ * art-embedded by the pre-review phases) so a subsequent import run is a
+ * clean no-op over the now-empty inbox.
+ */
+async function runPostEnrichmentPhases(operationsMap, opId) {
+  const op = operationsMap.get(opId);
+  if (!op) throw new Error("Operation not found");
+  const { monthPath, libraryPath, movedCount } = op;
+  if (!monthPath || !libraryPath) {
+    throw new Error("Operation is missing monthPath/libraryPath — cannot resume");
+  }
+
+  const { patch, appendOutput } = createOpHelpers(operationsMap, opId);
+
+  // ---------- beet import -s -A monthPath ----------
+  const existingPaths = readImportedPaths();
+
+  patch({ phase: "importing", processed: 0, total: movedCount || 0, currentFile: null });
+  let importProcessed = 0;
+  const importResult = await runBeetStreaming(
+    ["import", "-s", "-A", monthPath],
+    (chunk) => {
+      appendOutput(chunk);
+      for (const line of chunk.split("\n")) {
+        const fn = parseImportProgressLine(line);
+        if (fn) {
+          importProcessed += 1;
+          patch({
+            processed: Math.min(importProcessed, movedCount || importProcessed),
+            currentFile: fn,
+          });
+        }
+      }
+    },
+  );
+  if (importResult.code !== 0) {
+    throw new Error(
+      `beet import failed (exit ${importResult.code}): ${importResult.stderr || "(no stderr)"}`,
+    );
+  }
+  patch({ currentFile: null });
+
+  const newPaths = [...readImportedPaths()].filter((p) => !existingPaths.has(p));
+  const monthFolders = uniqueMonthFolders(newPaths, libraryPath);
+
+  if (monthFolders.length === 0) {
+    patch({ phase: "updating", processed: 0, total: 0, currentFile: null });
+    await runBeetStreaming(["update"], (chunk) => appendOutput(chunk));
+    patch({
+      status: "completed",
+      phase: "done",
+      completedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  // Run the shared processing pipeline (bad → scrub → genres → art → replaygain …)
+  await runProcessingPhases({ monthFolders, patch, appendOutput });
+
+  patch({
+    status: "completed",
+    phase: "done",
+    completedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Resume an inbox import that paused at the Claude enrichment review step.
+ * Called by POST /api/inbox/import/:id/resume after the user has (optionally)
+ * applied enrichment fields to files via the existing per-track apply route.
+ */
+export function resumeInboxImport(operationsMap, opId) {
+  const op = operationsMap.get(opId);
+  if (!op) throw new Error("Operation not found");
+  if (op.status !== "awaiting_review") {
+    throw new Error(`Operation is not awaiting review (status=${op.status})`);
+  }
+  if (!op.monthPath) {
+    throw new Error("Operation is missing monthPath — cannot resume");
+  }
+
+  operationsMap.set(opId, { ...op, status: "running" });
+
+  (async () => {
+    try {
+      await runPostEnrichmentPhases(operationsMap, opId);
+    } catch (err) {
+      const current = operationsMap.get(opId) || {};
+      operationsMap.set(opId, {
+        ...current,
+        status: "failed",
+        error: err.message,
+        completedAt: new Date().toISOString(),
+      });
+    }
+  })();
+}
+
+function requireBinary(name, installHint) {
+  const probe = spawnSync("/usr/bin/env", ["which", name], { encoding: "utf8" });
+  if (probe.status !== 0 || !probe.stdout.trim()) {
+    throw new Error(`${name} not found on PATH. ${installHint}`);
+  }
+}
 
 function readImportedPaths() {
   const dbPath = getBeetsLibraryDbPath();
@@ -21,25 +135,6 @@ function readImportedPaths() {
   try {
     const rows = db.prepare("SELECT CAST(path AS TEXT) as path FROM items").all();
     return new Set(rows.map((r) => resolvePath(r.path)));
-  } finally {
-    db.close();
-  }
-}
-
-function countItemsInFolders(folders) {
-  const dbPath = getBeetsLibraryDbPath();
-  if (!existsSync(dbPath)) return 0;
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    let total = 0;
-    const stmt = db.prepare(
-      "SELECT COUNT(*) as count FROM items WHERE CAST(path AS TEXT) LIKE ?",
-    );
-    for (const folder of folders) {
-      const row = stmt.get(folder + "/%");
-      total += row?.count ?? 0;
-    }
-    return total;
   } finally {
     db.close();
   }
@@ -57,83 +152,6 @@ function uniqueMonthFolders(paths, libraryRoot) {
   return [...months].map((m) => join(libRoot, m));
 }
 
-// Stream a child process line-by-line, invoking onLine for each complete line.
-function spawnStream(cmd, args, onLine) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, {
-      env: { ...process.env, PYTHONUNBUFFERED: "1" },
-    });
-    let stdout = "";
-    let stderr = "";
-    let buf = "";
-
-    const flushBuffered = (chunk) => {
-      buf += chunk;
-      const lines = buf.split("\n");
-      buf = lines.pop();
-      for (const line of lines) onLine(line);
-    };
-
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (c) => {
-      stdout += c;
-      flushBuffered(c);
-    });
-    child.stderr.on("data", (c) => {
-      stderr += c;
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (buf) onLine(buf);
-      resolve({ stdout, stderr, code: code ?? 0 });
-    });
-  });
-}
-
-// Match "  Setting #N: FILENAME..." from set_album_tags.py
-//   and "  Embedding: FILENAME..." from generate_album_art.py
-const SETTING_LINE = /^\s+Setting\s+#\d+:\s+(.+?)\.\.\.\s*$/;
-const EMBEDDING_LINE = /^\s+Embedding:\s+(.+?)\.\.\.\s*$/;
-
-function parsePythonProgressLine(line) {
-  const m1 = line.match(SETTING_LINE);
-  if (m1) return m1[1];
-  const m2 = line.match(EMBEDDING_LINE);
-  if (m2) return m2[1];
-  return null;
-}
-
-// Match any audio file basename in a line. Used to count progress during
-// `beet import`, whose exact line format is version-dependent but always
-// mentions the path of the file being added.
-const AUDIO_FILE_RE = /([^/\s'"`]+\.(?:mp3|flac|wav|aiff|aif|m4a|aac|ogg|opus|wma))\b/i;
-
-function parseImportProgressLine(line) {
-  const m = line.match(AUDIO_FILE_RE);
-  return m ? m[1] : null;
-}
-
-/**
- * Run the full inbox import pipeline under an existing operation id.
- * Pipeline:
- *   0. Move files from inbox into library's current month folder
- *   1. beet import -A <monthFolder>
- *   2. set_album_tags.py <yearFolder>    (for each affected year)
- *   3. generate_album_art.py <yearFolder>
- *   4. beet update
- *
- * The operation record in `operationsMap` is mutated in place with
- * `{ phase, processed, total, currentFile, output, status, error }` so the
- * existing `/api/beets/operations/:id` polling endpoint works unchanged.
- */
-// Matches ANSI CSI sequences (colors, cursor moves) emitted by beets when it
-// thinks it's writing to a terminal. We strip them before storing the log so
-// the collapsible details in the UI stay readable.
-// eslint-disable-next-line no-control-regex
-const ANSI_CSI_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g;
-const stripAnsi = (s) => s.replace(ANSI_CSI_RE, "");
-
 const LOSSY_TO_MP3 = new Set([".ogg", ".opus", ".aac", ".m4a", ".wma"]);
 const LOSSLESS_TO_FLAC = new Set([".wav", ".aiff", ".aif"]);
 
@@ -142,6 +160,29 @@ function classifyForConversion(ext) {
   if (LOSSY_TO_MP3.has(e)) return "mp3";
   if (LOSSLESS_TO_FLAC.has(e)) return "flac";
   return null;
+}
+
+function readInboxTags(file) {
+  const result = spawnSync(
+    "ffprobe",
+    [
+      "-v", "error",
+      "-show_entries", "format_tags=artist,title,album",
+      "-of", "default=noprint_wrappers=1:nokey=0",
+      file,
+    ],
+    { encoding: "utf8" },
+  );
+  const tags = { artist: "", title: "", album: "" };
+  if (result.status !== 0) return tags;
+  for (const line of result.stdout.split("\n")) {
+    const m = line.match(/^TAG:(\w+)=(.*)$/i);
+    if (m) {
+      const key = m[1].toLowerCase();
+      if (key in tags) tags[key] = m[2].trim();
+    }
+  }
+  return tags;
 }
 
 function pickUniqueDest(destDir, name) {
@@ -173,14 +214,10 @@ function ffmpegArgs(src, dest, target) {
   ];
 }
 
-/**
- * Compute the library month folder path for the current date.
- * Matches existing structure: YYYY/YYYY-MM MonthName (e.g. 2026/2026-04 April).
- */
 function currentMonthFolder(libraryPath) {
   const now = new Date();
   const year = now.getFullYear();
-  const month = now.getMonth(); // 0-indexed
+  const month = now.getMonth();
   const monthName = now.toLocaleString("en-US", { month: "long" });
   const folderName = `${year}-${String(month + 1).padStart(2, "0")} ${monthName}`;
   const yearPath = join(libraryPath, String(year));
@@ -188,11 +225,6 @@ function currentMonthFolder(libraryPath) {
   return { yearPath, monthPath, folderName };
 }
 
-/**
- * Move files from the inbox into the library's current month folder.
- * Creates year/month folders if they don't exist.
- * Returns an array of destination paths.
- */
 function moveFilesToLibrary(files, libraryPath) {
   const { yearPath, monthPath } = currentMonthFolder(libraryPath);
   mkdirSync(yearPath, { recursive: true });
@@ -200,7 +232,7 @@ function moveFilesToLibrary(files, libraryPath) {
 
   const moved = [];
   for (const src of files) {
-    const dest = join(monthPath, basename(src));
+    const dest = pickUniqueDest(monthPath, basename(src));
     try {
       renameSync(src, dest);
     } catch (err) {
@@ -213,27 +245,65 @@ function moveFilesToLibrary(files, libraryPath) {
   return moved;
 }
 
+/**
+ * Run the full inbox import pipeline under an existing operation id.
+ *
+ * Pre-review (runs immediately):
+ *   -2.   requireBinary checks (mp3val, ffmpeg, ffprobe)
+ *   -1.5. validate inbox tags (reject if artist/title missing)
+ *   -1.   ffmpeg conversion of non-mp3/flac inbox files
+ *    0.   move files into the current month folder
+ *    1.   set_album_tags.py on the year folder (normalize album/track)
+ *    2.   Claude AI enrichment proposals → PAUSE for user review
+ *
+ * Post-review (runs via resumeInboxImport, or inline if enrichment failed):
+ *    3.   beet import -s -A monthPath (catalog into beets DB)
+ *    4–10. shared processing pipeline (see libraryProcessingPipeline.js)
+ */
 export function runInboxImport(operationsMap, opId, inboxPath, libraryPath, pendingFiles) {
   let workingFiles = [...pendingFiles];
   let pendingTotal = workingFiles.length;
-  const patch = (delta) => {
-    const current = operationsMap.get(opId);
-    if (!current) return;
-    operationsMap.set(opId, { ...current, ...delta });
-  };
-  const appendOutput = (text) => {
-    const current = operationsMap.get(opId);
-    if (!current) return;
-    const clean = stripAnsi(text);
-    operationsMap.set(opId, {
-      ...current,
-      output: (current.output || "") + clean + (clean.endsWith("\n") ? "" : "\n"),
-    });
-  };
+  const { patch, appendOutput } = createOpHelpers(operationsMap, opId);
 
   (async () => {
     try {
-      // ---------- Step -1: convert non-mp3/flac files ----------
+      requireBinary("mp3val", "Install with: brew install mp3val");
+      requireBinary("ffmpeg", "Install with: brew install ffmpeg");
+      requireBinary(
+        "ffprobe",
+        "ffprobe ships with ffmpeg — install with: brew install ffmpeg",
+      );
+
+      patch({
+        phase: "validating",
+        processed: 0,
+        total: workingFiles.length,
+        currentFile: null,
+      });
+      const orphans = [];
+      for (let i = 0; i < workingFiles.length; i++) {
+        const f = workingFiles[i];
+        patch({ processed: i, currentFile: basename(f) });
+        const tags = readInboxTags(f);
+        if (!tags.artist || !tags.title) {
+          orphans.push({ file: f, tags });
+        }
+      }
+      patch({ processed: workingFiles.length, currentFile: null });
+
+      if (orphans.length > 0) {
+        const list = orphans
+          .map((o) => {
+            const a = o.tags.artist || "(empty)";
+            const t = o.tags.title || "(empty)";
+            return `  ${basename(o.file)}  [artist=${a}, title=${t}]`;
+          })
+          .join("\n");
+        throw new Error(
+          `Refusing to import ${orphans.length} untagged file(s) — set artist and title before re-running:\n${list}`,
+        );
+      }
+
       const needsConversion = [];
       const passThrough = [];
       for (const f of workingFiles) {
@@ -286,60 +356,12 @@ export function runInboxImport(operationsMap, opId, inboxPath, libraryPath, pend
       workingFiles = [...passThrough, ...convertedFiles];
       pendingTotal = workingFiles.length;
 
-      // ---------- Step 0: move files into the library ----------
       patch({ phase: "importing", processed: 0, total: pendingTotal, currentFile: null });
 
       const { monthPath } = currentMonthFolder(libraryPath);
       const movedFiles = moveFilesToLibrary(workingFiles, libraryPath);
       for (const f of movedFiles) {
         appendOutput(`Moved: ${basename(f)} -> ${monthPath}\n`);
-      }
-
-      // ---------- Step 1: beet import -A ----------
-      const existingPaths = readImportedPaths();
-
-      let importProcessed = 0;
-      const importResult = await runBeetStreaming(
-        ["import", "-A", monthPath],
-        (chunk) => {
-          appendOutput(chunk);
-          for (const line of chunk.split("\n")) {
-            const fn = parseImportProgressLine(line);
-            if (fn) {
-              importProcessed += 1;
-              patch({
-                processed: Math.min(importProcessed, pendingTotal),
-                currentFile: fn,
-              });
-            }
-          }
-        },
-      );
-
-      if (importResult.code !== 0) {
-        throw new Error(
-          `beet import failed (exit ${importResult.code}): ${importResult.stderr || "(no stderr)"}`,
-        );
-      }
-
-      patch({ processed: pendingTotal, currentFile: null });
-
-      // ---------- Identify month folders touched by the import ----------
-      const newPaths = [...readImportedPaths()].filter((p) => !existingPaths.has(p));
-      const monthFolders = uniqueMonthFolders(newPaths, libraryPath);
-
-      if (monthFolders.length === 0) {
-        // Incremental import skipped everything, or paths didn't land where
-        // we expected. Nothing for the Python scripts to do — still resync
-        // beets in case existing tags drifted, then finish.
-        patch({ phase: "updating", processed: 0, total: 0, currentFile: null });
-        await runBeetStreaming(["update"], (chunk) => appendOutput(chunk));
-        patch({
-          status: "completed",
-          phase: "done",
-          completedAt: new Date().toISOString(),
-        });
-        return;
       }
 
       if (!existsSync(SINGLES_VENV_PY)) {
@@ -349,26 +371,25 @@ export function runInboxImport(operationsMap, opId, inboxPath, libraryPath, pend
         );
       }
 
-      // Use the full count of items under the affected month folders as the
-      // progress denominator — the Python scripts walk recursively and retag
-      // every file in the folder, not just the newly-added ones.
-      const phaseTotal = countItemsInFolders(monthFolders);
+      patch({ monthPath, libraryPath, movedCount: pendingTotal });
 
-      // ---------- Step 2: set_album_tags.py ----------
-      patch({ phase: "tagging", processed: 0, total: phaseTotal, currentFile: null });
+      const yearFolder = dirname(monthPath);
+
+      // set_album_tags.py runs BEFORE beet import so the DB's first read of
+      // each file already shows normalised album / albumartist / track tags.
+      patch({ phase: "tagging", processed: 0, total: pendingTotal, currentFile: null });
       let tagProcessed = 0;
-
-      for (const monthFolder of monthFolders) {
+      {
         const result = await spawnStream(
           SINGLES_VENV_PY,
-          [TAG_SCRIPT, monthFolder],
+          [TAG_SCRIPT, yearFolder],
           (line) => {
             appendOutput(line);
             const fn = parsePythonProgressLine(line);
             if (fn) {
               tagProcessed += 1;
               patch({
-                processed: Math.min(tagProcessed, phaseTotal),
+                processed: Math.min(tagProcessed, pendingTotal),
                 currentFile: fn,
               });
             }
@@ -380,50 +401,40 @@ export function runInboxImport(operationsMap, opId, inboxPath, libraryPath, pend
           );
         }
       }
-      patch({ processed: phaseTotal, currentFile: null });
+      patch({ processed: pendingTotal, currentFile: null });
 
-      // ---------- Step 3: generate_album_art.py ----------
-      patch({ phase: "artwork", processed: 0, total: phaseTotal, currentFile: null });
-      let artProcessed = 0;
-
-      for (const monthFolder of monthFolders) {
-        const result = await spawnStream(
-          SINGLES_VENV_PY,
-          [ART_SCRIPT, monthFolder],
-          (line) => {
-            appendOutput(line);
-            const fn = parsePythonProgressLine(line);
-            if (fn) {
-              artProcessed += 1;
-              patch({
-                processed: Math.min(artProcessed, phaseTotal),
-                currentFile: fn,
-              });
-            }
-          },
-        );
-        if (result.code !== 0) {
-          throw new Error(
-            `generate_album_art.py failed (exit ${result.code}): ${result.stderr || "(no stderr)"}`,
-          );
+      let enrichmentResults = [];
+      let enrichmentFailed = false;
+      try {
+        patch({ phase: "enriching", processed: 0, total: movedFiles.length, currentFile: null });
+        appendOutput("Enriching metadata via Claude AI...\n");
+        const enrichResult = await claudeEnrichTracks(movedFiles);
+        enrichmentResults = enrichResult.results || [];
+        for (const r of enrichmentResults) {
+          if (r.status === "error") {
+            appendOutput(`  Skipped ${basename(r.filePath)}: ${r.error}\n`);
+          }
         }
-      }
-      patch({ processed: phaseTotal, currentFile: null });
-
-      // ---------- Step 4: beet update ----------
-      patch({ phase: "updating", processed: 0, total: 0, currentFile: null });
-      const updateResult = await runBeetStreaming(["update"], (chunk) => appendOutput(chunk));
-      if (updateResult.code !== 0) {
-        throw new Error(
-          `beet update failed (exit ${updateResult.code}): ${updateResult.stderr || "(no stderr)"}`,
-        );
+        patch({ processed: movedFiles.length, currentFile: null });
+      } catch (enrichErr) {
+        console.error("[enrichment] Claude enrichment failed:", enrichErr);
+        appendOutput(`Enrichment skipped: ${enrichErr.message}\n`);
+        enrichmentFailed = true;
       }
 
-      patch({
-        status: "completed",
-        phase: "done",
-        completedAt: new Date().toISOString(),
-      });
+      const reviewable = enrichmentResults.filter((r) => r.status !== "error");
+      if (!enrichmentFailed && reviewable.length > 0) {
+        patch({
+          status: "awaiting_review",
+          phase: "awaiting-enrichment-review",
+          enrichmentResults,
+          inboxPath,
+          currentFile: null,
+        });
+        return;
+      }
+
+      await runPostEnrichmentPhases(operationsMap, opId);
     } catch (err) {
       const current = operationsMap.get(opId) || {};
       operationsMap.set(opId, {

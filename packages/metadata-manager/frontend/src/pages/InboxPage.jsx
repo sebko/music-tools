@@ -16,13 +16,22 @@ import {
   Loader,
   FolderOpen,
 } from "lucide-react";
-import { fetchInboxStatus, runInboxImport } from "../api/inbox";
+import { fetchInboxStatus, runInboxImport, resumeInboxImport } from "../api/inbox";
 import { useOperationPolling } from "../hooks/useOperationPolling";
+import EnrichmentCard from "../components/EnrichmentCard";
 
 const PHASE_LABELS = {
+  validating: "Validating inbox tags",
+  converting: "Converting audio formats",
   importing: "Importing files with beets",
+  checking: "Checking file integrity",
   tagging: "Normalizing tags",
+  scrubbing: "Scrubbing legacy tag frames",
+  enriching: "Enriching metadata via Claude AI",
+  "awaiting-enrichment-review": "Review Claude suggestions",
   artwork: "Embedding artwork",
+  ftintitle: "Cleaning featured artists",
+  replaygain: "Computing loudness (ReplayGain)",
   updating: "Syncing beets database",
   done: "Complete",
 };
@@ -47,9 +56,17 @@ function InboxPage() {
 
   const status = operation?.status;
   const hasStarted = !!operationId || startMutation.isPending;
+  const isAwaitingReview = status === "awaiting_review";
   const isRunning = status === "running" || (hasStarted && !operation);
   const isComplete = status === "completed";
   const isFailed = status === "failed" || startMutation.isError;
+
+  const resumeMutation = useMutation({
+    mutationFn: () => resumeInboxImport(operationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["operation", operationId] });
+    },
+  });
 
   if (isComplete && operationId) {
     // One-shot refresh when the pipeline finishes so the UI reflects the new
@@ -108,6 +125,10 @@ function InboxPage() {
       />
     );
   } else if (hasStarted) {
+    const reviewableResults = (operation?.enrichmentResults || []).filter(
+      (r) => r.status !== "error",
+    );
+
     content = (
       <div className="card-brutalist p-6 space-y-4">
         <div className="flex items-center gap-3">
@@ -115,13 +136,60 @@ function InboxPage() {
             <Check className="w-6 h-6 text-green-600 dark:text-green-400" />
           ) : isFailed ? (
             <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+          ) : isAwaitingReview ? (
+            <Check className="w-6 h-6 text-amber-500" />
           ) : (
             <Loader className="w-6 h-6 animate-spin text-main" />
           )}
           <h2 className="text-xl font-heading text-foreground">
-            {isComplete ? "Import complete" : isFailed ? "Import failed" : phaseLabel}
+            {isComplete
+              ? "Import complete"
+              : isFailed
+                ? "Import failed"
+                : phaseLabel}
           </h2>
         </div>
+
+        {isAwaitingReview && (
+          <div className="space-y-4">
+            <p className="text-sm text-foreground/70">
+              Claude proposed updates for {reviewableResults.length} track
+              {reviewableResults.length === 1 ? "" : "s"}. Toggle the fields you
+              want and click <strong>Apply</strong> on each card, then continue
+              the import.
+            </p>
+            <div className="space-y-4">
+              {reviewableResults.map((r) => (
+                <EnrichmentCard
+                  key={r.filePath}
+                  result={r}
+                  inboxPath={operation?.inboxPath || inboxPath || ""}
+                />
+              ))}
+            </div>
+            {resumeMutation.isError && (
+              <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
+                <AlertCircle className="w-3 h-3 shrink-0" />
+                {resumeMutation.error?.message}
+              </div>
+            )}
+            <div className="flex justify-end pt-2">
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => resumeMutation.mutate()}
+                disabled={resumeMutation.isPending}
+              >
+                {resumeMutation.isPending ? (
+                  <Loader className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                Continue import
+              </Button>
+            </div>
+          </div>
+        )}
 
         {isRunning && total > 0 && (
           <div className="space-y-2">

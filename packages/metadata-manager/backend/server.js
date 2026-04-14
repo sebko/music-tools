@@ -2,7 +2,8 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { stat, rm } from "fs/promises";
-import { resolve as resolvePath } from "path";
+import { resolve as resolvePath, dirname } from "path";
+import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
 import { getTrackArtwork } from "./services/fileMetadataReader.js";
 import { getAllSettings, getSetting, setSetting, getInboxPath } from "./services/settingsService.js";
@@ -12,9 +13,14 @@ import { setBeetsLibraryDirectory } from "./services/beetsConfig.js";
 import { resetBeetsLibraryDb } from "./services/beetsLibrary.js";
 import { listUnprocessedFiles } from "./services/unprocessedFiles.js";
 import { parseDuplicatesOutput } from "./services/duplicatesParser.js";
-import { runInboxImport } from "./services/inboxImportRunner.js";
+import { runInboxImport, resumeInboxImport } from "./services/inboxImportRunner.js";
+import { enrichTracks, getCachedEnrichments, applyEnrichment } from "./services/trackEnrichmentService.js";
+import { checkGenreFormat } from "./services/genreFormatChecker.js";
 
+// Load .env from local backend dir first, then fall back to monorepo root.
+// This lets ANTHROPIC_API_KEY live in the root .env without duplication.
 dotenv.config();
+dotenv.config({ path: resolvePath(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", ".env") });
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -166,6 +172,46 @@ app.get("/api/tracks/stats", (req, res) => {
   }
 });
 
+// Check genre encoding format for tracks by ID. Reads actual file tags via
+// music-metadata to determine whether genres use proper multi-value encoding
+// (null-byte separated TCON for MP3, multiple Vorbis GENRE for FLAC) vs
+// incorrectly joined strings.
+app.get("/api/tracks/genre-status", async (req, res) => {
+  try {
+    const idsParam = req.query.ids;
+    if (!idsParam) {
+      return res.json({});
+    }
+    const ids = idsParam.split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    if (ids.length === 0) {
+      return res.json({});
+    }
+
+    const result = {};
+    // Run checks in parallel for speed
+    await Promise.all(
+      ids.map(async (id) => {
+        const item = getItem(id);
+        if (!item || !item.path) {
+          result[id] = { genres: [], correctlyFormatted: true, hasGenres: false, error: "Track not found" };
+          return;
+        }
+        try {
+          const status = await checkGenreFormat(item.path);
+          result[id] = status;
+        } catch (err) {
+          result[id] = { genres: [], correctlyFormatted: true, hasGenres: false, error: err.message };
+        }
+      }),
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error("Error checking genre status:", error);
+    res.status(500).json({ error: "Failed to check genre status" });
+  }
+});
+
 // Get duplicate tracks via `beet duplicates -s --full`. Strict mode (`-s`)
 // silently drops any item where any group key (albumartist/album/title/length)
 // is empty, so untagged files from `-A` imports don't pollute the results.
@@ -276,6 +322,63 @@ app.get("/api/tracks/:id/artwork", async (req, res) => {
   } catch (error) {
     console.error("Error fetching artwork:", error);
     res.status(500).json({ error: "Failed to fetch artwork" });
+  }
+});
+
+// Enrich track metadata via Claude
+app.post("/api/tracks/enrich", async (req, res) => {
+  try {
+    const { files } = req.body || {};
+    if (!Array.isArray(files) || files.length === 0) {
+      return res.status(400).json({ error: "files array is required" });
+    }
+    const result = await enrichTracks(files);
+    res.json(result);
+  } catch (error) {
+    console.error("Error enriching tracks:", error);
+    if (error.message.includes("ANTHROPIC_API_KEY")) {
+      return res.status(503).json({ error: "ANTHROPIC_API_KEY not configured" });
+    }
+    res.status(500).json({ error: "Failed to enrich tracks" });
+  }
+});
+
+// Get cached enrichment results (no Claude call)
+app.get("/api/tracks/enrich", async (req, res) => {
+  try {
+    const filesParam = req.query.files;
+    if (!filesParam) {
+      return res.json({ results: [] });
+    }
+    const files = filesParam.split(",").map((f) => f.trim()).filter(Boolean);
+    const result = await getCachedEnrichments(files);
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching cached enrichments:", error);
+    res.status(500).json({ error: "Failed to fetch cached enrichments" });
+  }
+});
+
+// Apply proposed metadata to a file
+app.post("/api/tracks/enrich/apply", async (req, res) => {
+  try {
+    const { filePath, fields } = req.body || {};
+    if (!filePath || !fields || typeof fields !== "object") {
+      return res.status(400).json({ error: "filePath and fields are required" });
+    }
+    // Validate the file is within inbox or library paths
+    const inboxPath = await getInboxPath().catch(() => null);
+    const libraryPath = await getSetting("musicLibraryPath").catch(() => null);
+    const abs = resolvePath(filePath);
+    const allowed = [inboxPath, libraryPath].filter(Boolean).map((p) => resolvePath(p));
+    if (allowed.length > 0 && !allowed.some((root) => abs.startsWith(root + "/") || abs === root)) {
+      return res.status(403).json({ error: "File is outside allowed paths" });
+    }
+    const result = await applyEnrichment(filePath, fields);
+    res.json(result);
+  } catch (error) {
+    console.error("Error applying enrichment:", error);
+    res.status(500).json({ error: error.message || "Failed to apply enrichment" });
   }
 });
 
@@ -579,7 +682,7 @@ app.post("/api/beets/unprocessed/delete", async (req, res) => {
   }
 });
 
-// Run a single beets plugin command (duplicates | scrub)
+// Run a single beets plugin command (duplicates)
 app.post("/api/beets/plugins/run", async (req, res) => {
   try {
     const { plugin } = req.body || {};
@@ -589,21 +692,11 @@ app.post("/api/beets/plugins/run", async (req, res) => {
       // libraries imported with `-A` (no autotag) because all tag fields are
       // empty — unreadable in the wizard log.
       duplicates: ["duplicates", "-p"],
-      // `beet -v scrub` with no query matches all items via `lib.items([])`.
-      // The global `-v` flag (must come before the subcommand) makes the scrub
-      // plugin emit `scrub: scrubbing: <path>` to stderr per item, which we
-      // parse for progress.
-      scrub: ["-v", "scrub"],
     };
     if (!plugin || !(plugin in allowed)) {
       return res.status(400).json({ error: `plugin must be one of: ${Object.keys(allowed).join(", ")}` });
     }
-    const opts = {};
-    if (plugin === "scrub") {
-      opts.seed = { total: getStats().total, processed: 0, currentFile: null };
-      opts.parser = parseScrubProgress;
-    }
-    const id = startStreamingBeetOp(`plugin:${plugin}`, allowed[plugin], opts);
+    const id = startStreamingBeetOp(`plugin:${plugin}`, allowed[plugin]);
     res.json({ operationId: id, message: `Plugin ${plugin} started` });
   } catch (error) {
     console.error("Error running plugin:", error);
@@ -611,23 +704,60 @@ app.post("/api/beets/plugins/run", async (req, res) => {
   }
 });
 
-// Parses `scrub: scrubbing: <path>` lines emitted by `beet -v scrub` (stderr).
-// Returns a patch with the new processed count and current file basename, or
-// null if the chunk had no scrub lines.
-function parseScrubProgress(chunk, current) {
-  const re = /^scrub: scrubbing: (.+)$/gm;
-  let match;
-  let lastPath = null;
-  let added = 0;
-  while ((match = re.exec(chunk)) !== null) {
-    lastPath = match[1];
-    added += 1;
+// Run the full library processing pipeline (scrub, genre normalisation,
+// artwork, ftintitle, replaygain, etc.). Used by the setup wizard's
+// "Finalise" step. Same pipeline that runs during inbox import.
+app.post("/api/beets/library/process", async (req, res) => {
+  try {
+    const libraryPath = await getSetting("musicLibraryPath");
+    if (!libraryPath) {
+      return res.status(400).json({ error: "No library path configured" });
+    }
+    const { enumerateMonthFolders } = await import("./services/libraryMonthFolders.js");
+    const monthFolders = await enumerateMonthFolders(libraryPath);
+    if (monthFolders.length === 0) {
+      return res.status(400).json({ error: "No month folders found in library" });
+    }
+
+    const { createOpHelpers } = await import("./services/beetsPipelineHelpers.js");
+    const { runProcessingPhases } = await import("./services/libraryProcessingPipeline.js");
+
+    const id = randomUUID();
+    operations.set(id, {
+      id,
+      type: "library-process",
+      status: "running",
+      output: "",
+      startedAt: new Date().toISOString(),
+    });
+
+    const { patch, appendOutput } = createOpHelpers(operations, id);
+
+    (async () => {
+      try {
+        await runProcessingPhases({ monthFolders, patch, appendOutput });
+        patch({
+          status: "completed",
+          phase: "done",
+          completedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        const current = operations.get(id) || {};
+        operations.set(id, {
+          ...current,
+          status: "failed",
+          error: err.message,
+          completedAt: new Date().toISOString(),
+        });
+      }
+    })();
+
+    res.json({ operationId: id, message: "Library processing started" });
+  } catch (error) {
+    console.error("Error starting library processing:", error);
+    res.status(500).json({ error: "Failed to start library processing" });
   }
-  if (added === 0) return null;
-  const processed = (current.processed || 0) + added;
-  const currentFile = lastPath ? lastPath.split("/").pop() : current.currentFile;
-  return { processed, currentFile };
-}
+});
 
 // ==========================================
 // Inbox API
@@ -691,6 +821,27 @@ app.post("/api/inbox/import", async (req, res) => {
   } catch (error) {
     console.error("Error starting inbox import:", error);
     res.status(500).json({ error: "Failed to start inbox import" });
+  }
+});
+
+// Resume a paused inbox import after the user reviews Claude's enrichment
+// proposals. Any per-track field changes they wanted have already been
+// written via POST /api/tracks/enrich/apply; this endpoint just restarts
+// the tail of the pipeline (DB sync → artwork → ftintitle → replaygain → update).
+app.post("/api/inbox/import/:id/resume", (req, res) => {
+  const op = operations.get(req.params.id);
+  if (!op) return res.status(404).json({ error: "Operation not found" });
+  if (op.status !== "awaiting_review") {
+    return res.status(400).json({
+      error: `Operation is not awaiting review (status=${op.status})`,
+    });
+  }
+  try {
+    resumeInboxImport(operations, req.params.id);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("Error resuming inbox import:", error);
+    res.status(500).json({ error: error.message || "Failed to resume import" });
   }
 });
 

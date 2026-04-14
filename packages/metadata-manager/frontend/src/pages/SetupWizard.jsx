@@ -29,6 +29,7 @@ import {
   fetchLibraryFolders,
   deleteDuplicateTracks,
   runBeetsPlugin,
+  startLibraryFinalise,
   markSetupComplete,
 } from "../api/setup";
 import { useOperationPolling } from "../hooks/useOperationPolling";
@@ -41,7 +42,7 @@ const STEPS = [
   { id: "import", label: "Import" },
   { id: "cleanup", label: "Cleanup" },
   { id: "duplicates", label: "Duplicates" },
-  { id: "scrub", label: "Scrub" },
+  { id: "finalise", label: "Finalise" },
   { id: "complete", label: "Done" },
 ];
 
@@ -102,8 +103,8 @@ function SetupWizard() {
         {currentStep.id === "duplicates" && (
           <StepDuplicates onNext={goNext} onBack={goBack} />
         )}
-        {currentStep.id === "scrub" && (
-          <StepScrub onNext={goNext} />
+        {currentStep.id === "finalise" && (
+          <StepFinalise onNext={goNext} />
         )}
         {currentStep.id === "complete" && (
           <StepComplete onFinish={finish} />
@@ -969,12 +970,25 @@ function StepDuplicates({ onNext, onBack }) {
 // Step: Scrub tags
 // --------------------------------------------------------------------------
 
-function StepScrub({ onNext }) {
+const PHASE_LABELS = {
+  checking: "Checking integrity",
+  setAlbumTags: "Tagging albums",
+  syncingPreScrub: "Syncing database",
+  scrubbing: "Scrubbing tags",
+  syncingPostScrub: "Syncing database",
+  normalizingGenres: "Normalising genres",
+  artwork: "Embedding album art",
+  ftintitle: "Moving feat. into title",
+  replaygain: "Normalising volume",
+  syncingFinal: "Final database sync",
+};
+
+function StepFinalise({ onNext }) {
   const [operationId, setOperationId] = useState(null);
   const [showLog, setShowLog] = useState(false);
 
   const startMutation = useMutation({
-    mutationFn: () => runBeetsPlugin("scrub"),
+    mutationFn: () => startLibraryFinalise(),
     onSuccess: (data) => setOperationId(data.operationId),
   });
 
@@ -989,23 +1003,22 @@ function StepScrub({ onNext }) {
   const isFailed = status === "failed" || startMutation.isError;
 
   const total = operation?.total ?? 0;
-  // When complete, snap to total so the bar lands at 100% even if the parser
-  // missed a line or two from the final stderr flush.
   const processed = isComplete && total
     ? total
     : Math.min(operation?.processed ?? 0, total || Infinity);
   const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+  const phaseLabel = PHASE_LABELS[operation?.phase] || operation?.phase || "";
 
   return (
     <div className="card-brutalist p-6 space-y-4">
       <div className="flex items-center gap-3">
         <Sparkles className="w-6 h-6 text-main" />
         <h2 className="text-xl font-heading text-foreground">
-          Scrubbing tags
+          Finalise library
         </h2>
       </div>
       <p className="text-foreground/80">
-        Strips non-essential tag frames from files and re-writes clean tags from the beets database. This runs across every track in your library.
+        Runs integrity check, album tags, tag scrub, genre normalisation, album art, feat-in-title, and volume normalisation (ReplayGain) across every track in your library.
       </p>
 
       {(isRunning || isComplete) && total > 0 && (
@@ -1015,7 +1028,7 @@ function StepScrub({ onNext }) {
               {isRunning && (
                 <Loader className="inline w-4 h-4 animate-spin text-main mr-2 -mt-0.5" />
               )}
-              Scrubbed {processed.toLocaleString()} / {total.toLocaleString()}
+              {phaseLabel} — {processed.toLocaleString()} / {total.toLocaleString()}
             </span>
             <span>{percent}%</span>
           </div>
@@ -1036,14 +1049,14 @@ function StepScrub({ onNext }) {
       {isRunning && total === 0 && (
         <div className="flex items-center gap-3 text-foreground/80">
           <Loader className="w-5 h-5 animate-spin text-main" />
-          Starting <code>beet scrub</code>...
+          {phaseLabel || "Starting..."}
         </div>
       )}
 
       {isComplete && (
         <div className="flex items-center gap-3 text-green-600 dark:text-green-400">
           <Check className="w-5 h-5" />
-          <span className="font-heading">Scrub complete</span>
+          <span className="font-heading">Finalisation complete</span>
         </div>
       )}
 
@@ -1051,7 +1064,7 @@ function StepScrub({ onNext }) {
         <div className="flex items-center gap-3 text-red-600 dark:text-red-400">
           <AlertCircle className="w-5 h-5" />
           <span className="font-heading">
-            Scrub failed: {operation?.error || startMutation.error?.message}
+            Failed: {operation?.error || startMutation.error?.message}
           </span>
         </div>
       )}
@@ -1091,7 +1104,7 @@ function StepScrub({ onNext }) {
                   <Loader className="w-4 h-4 animate-spin" />
                   Starting...
                 </span>
-              ) : "Scrub tags"}
+              ) : "Finalise library"}
             </Button>
           </div>
         ) : (

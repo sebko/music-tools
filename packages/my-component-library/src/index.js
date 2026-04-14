@@ -8,6 +8,11 @@ export { default as PageLoader } from './components/PageLoader';
 export { default as ThemeToggle } from './components/ThemeToggle';
 export { TagPill } from './components/TagPill';
 
+// Metadata comparison
+export { MetadataRow } from './components/MetadataRow';
+export { GenreStylesRow } from './components/GenreStylesRow';
+export { EditableGenresRow } from './components/EditableGenresRow';
+
 // Patterns
 export { default as Badge } from './components/Badge';
 export { default as MediaCard } from './components/MediaCard';

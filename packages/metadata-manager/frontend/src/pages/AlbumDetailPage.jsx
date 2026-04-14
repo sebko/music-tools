@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useAlbumTracks } from "../hooks/useAlbums";
+import { useMemo } from "react";
+import { useAlbumTracks, useGenreStatus } from "../hooks/useAlbums";
 import {
   PageLoader,
   DetailLayout,
@@ -56,11 +57,15 @@ function AlbumDetailPage() {
   const albumName = decodeURIComponent(name);
   const { data, isLoading, isError } = useAlbumTracks(albumName);
 
+  const tracks = data?.tracks || [];
+  const trackIds = useMemo(() => data?.tracks?.map((t) => t.id) || [], [data?.tracks]);
+  const { data: genreStatus, isLoading: genreStatusLoading } = useGenreStatus(trackIds);
+
   if (isLoading) {
     return <PageLoader message="Loading album..." />;
   }
 
-  if (isError || !data?.tracks?.length) {
+  if (isError || !tracks?.length) {
     return (
       <EmptyState
         icon={<Music className="w-16 h-16" />}
@@ -76,7 +81,6 @@ function AlbumDetailPage() {
     );
   }
 
-  const tracks = data.tracks;
   const first = tracks[0];
   const totalDuration = tracks.reduce(
     (sum, t) => sum + (t.durationSeconds || 0),
@@ -103,12 +107,31 @@ function AlbumDetailPage() {
   const showAlbumArtist =
     first.albumartist && first.albumartist !== first.artist;
 
-  const trackListData = tracks.map((track) => ({
-    id: track.id,
-    title: track.title || "Unknown Title",
-    subtitle: track.artist || "",
-    duration: track.durationSeconds,
-  }));
+  const trackListData = tracks.map((track) => {
+    const status = genreStatus?.[track.id];
+    let tags = undefined;
+
+    if (status) {
+      if (!status.hasGenres) {
+        // No genres — no pills
+        tags = undefined;
+      } else if (!status.correctlyFormatted) {
+        // Incorrectly formatted — warning pill
+        tags = { warning: true };
+      } else {
+        // Correctly formatted — show genre pills
+        tags = { values: status.genres };
+      }
+    }
+
+    return {
+      id: track.id,
+      title: track.title || "Unknown Title",
+      subtitle: track.artist || "",
+      duration: track.durationSeconds,
+      tags,
+    };
+  });
 
   return (
     <div>
@@ -136,10 +159,14 @@ function AlbumDetailPage() {
             <h2 className="text-lg font-heading text-foreground mb-4">
               Track Listing
             </h2>
-            <TrackList
-              tracks={trackListData}
-              formatDuration={(seconds) => formatDuration(seconds)}
-            />
+            {genreStatusLoading ? (
+              <PageLoader message="Loading genres..." />
+            ) : (
+              <TrackList
+                tracks={trackListData}
+                formatDuration={(seconds) => formatDuration(seconds)}
+              />
+            )}
           </div>
         }
       >
