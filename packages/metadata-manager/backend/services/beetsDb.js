@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
@@ -6,10 +7,19 @@ const DEFAULT_DB_PATH = join(homedir(), ".config", "beets", "library.db");
 
 let db = null;
 
+export function getDbPath() {
+  return process.env.BEETS_DB_PATH || DEFAULT_DB_PATH;
+}
+
+export function dbExists() {
+  return existsSync(getDbPath());
+}
+
 function getDb() {
-  const dbPath = process.env.BEETS_DB_PATH || DEFAULT_DB_PATH;
+  const dbPath = getDbPath();
+  if (!existsSync(dbPath)) return null;
   if (!db) {
-    db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    db = new Database(dbPath, { readonly: true });
   }
   return db;
 }
@@ -38,6 +48,9 @@ const SORT_MAP = {
 
 export function getItems({ page = 1, limit = 50, sort = "added", sortDirection = "desc", search = "" } = {}) {
   const db = getDb();
+  if (!db) {
+    return { items: [], pagination: { page, limit, total: 0, pages: 0, hasNext: false, hasPrev: false } };
+  }
   const offset = (page - 1) * limit;
   const orderBy = SORT_MAP[sort] || "added";
   const direction = sortDirection === "asc" ? "ASC" : "DESC";
@@ -74,12 +87,16 @@ export function getItems({ page = 1, limit = 50, sort = "added", sortDirection =
 
 export function getItem(id) {
   const db = getDb();
+  if (!db) return null;
   const row = db.prepare(`${BASE_SELECT} WHERE id = ?`).get(id);
   return row ? normalizeItem(row) : null;
 }
 
 export function getAlbums({ page = 1, limit = 50, search = "" } = {}) {
   const db = getDb();
+  if (!db) {
+    return { albums: [], pagination: { page, limit, total: 0, pages: 0, hasNext: false, hasPrev: false } };
+  }
   const offset = (page - 1) * limit;
 
   let whereClause = "";
@@ -120,6 +137,7 @@ export function getAlbums({ page = 1, limit = 50, search = "" } = {}) {
 
 export function getAlbumTracks(albumName) {
   const db = getDb();
+  if (!db) return [];
   const sql = `${BASE_SELECT} WHERE album = ? ORDER BY track ASC, title ASC`;
   const items = db.prepare(sql).all(albumName);
   return items.map(normalizeItem);
@@ -127,6 +145,7 @@ export function getAlbumTracks(albumName) {
 
 export function getStats() {
   const db = getDb();
+  if (!db) return { total: 0, withGenres: 0, withMbId: 0, formats: [], totalLengthSeconds: 0 };
   const total = db.prepare("SELECT COUNT(*) as n FROM items").get().n;
   const withGenres = db.prepare("SELECT COUNT(*) as n FROM items WHERE genres IS NOT NULL AND genres != ''").get().n;
   const withMbId = db.prepare("SELECT COUNT(*) as n FROM items WHERE mb_trackid IS NOT NULL AND mb_trackid != ''").get().n;
@@ -149,6 +168,31 @@ function normalizeItem(row) {
     modifiedAt: row.mtime ? new Date(row.mtime * 1000).toISOString() : null,
     durationSeconds: row.length || 0,
   };
+}
+
+/**
+ * Get distinct year-level subfolder names from item paths.
+ * E.g. paths like "/Volumes/T7/DJ Library/Singles/2015/file.mp3" → ["2015"]
+ * Extracts the path segment immediately after the library root.
+ */
+export function getDistinctFolders(libraryPath) {
+  const db = getDb();
+  if (!db) return [];
+  const prefix = libraryPath.replace(/\/+$/, "");
+  const rows = db.prepare(`
+    SELECT DISTINCT CAST(path AS TEXT) AS p
+    FROM items
+    WHERE p LIKE ? || '/%'
+  `).all(prefix);
+  const folders = new Set();
+  for (const { p } of rows) {
+    // Strip the prefix + "/", take everything up to the next "/"
+    const rest = p.slice(prefix.length + 1);
+    const slash = rest.indexOf("/");
+    const folder = slash === -1 ? rest : rest.slice(0, slash);
+    if (folder) folders.add(folder);
+  }
+  return [...folders].sort();
 }
 
 export function closeDb() {

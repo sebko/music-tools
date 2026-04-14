@@ -6,10 +6,10 @@ Start both development servers for the music-tagger application.
 
 ## Steps
 
-1. Kill any existing dev processes for this project (pattern-matched, no hardcoded port numbers):
+1. Kill any existing processes on the backend and frontend ports:
    ```bash
-   pkill -f "nodemon.*music-tagger/backend" 2>/dev/null || true
-   pkill -f "vite.*music-tagger/frontend" 2>/dev/null || true
+   lsof -ti:3001 | xargs kill -9 2>/dev/null || true
+   lsof -ti:5173 | xargs kill -9 2>/dev/null || true
    ```
 
 2. Start the backend server in the background:
@@ -17,9 +17,9 @@ Start both development servers for the music-tagger application.
    cd packages/music-tagger/backend && npm run dev
    ```
 
-3. Start the frontend server in the background:
+3. Start the frontend server in the background (enforce port 5173, fail loudly if taken):
    ```bash
-   cd packages/music-tagger/frontend && npm run dev
+   cd packages/music-tagger/frontend && npm run dev -- --port 5173 --strictPort
    ```
 
 4. Wait 3 seconds, then verify both processes are still running by reading the

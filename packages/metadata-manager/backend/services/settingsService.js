@@ -24,3 +24,7 @@ export async function getMusicLibraryPath() {
   const dbPath = await getSetting("musicLibraryPath");
   return dbPath || process.env.MUSIC_LIBRARY_PATH || null;
 }
+
+export async function getInboxPath() {
+  return (await getSetting("inboxPath")) || null;
+}

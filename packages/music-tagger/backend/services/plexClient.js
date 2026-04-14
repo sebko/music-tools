@@ -6,10 +6,7 @@
  */
 
 import { MyPlexAccount, Album } from "@ctrl/plex";
-import pkg from "@prisma/client";
-const { PrismaClient } = pkg;
-
-const prisma = new PrismaClient();
+import { prisma } from "../prisma/client.js";
 
 // Configuration - read dynamically to support test environment overrides
 let plexServer = null;

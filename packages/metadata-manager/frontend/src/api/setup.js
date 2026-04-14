@@ -80,8 +80,16 @@ export async function runBeetsPlugin(plugin) {
   );
 }
 
-export async function fetchDuplicateGroups() {
-  return handle(await fetch(`${API_BASE}/beets/tracks/duplicates`));
+export async function fetchDuplicateGroups(folders) {
+  const url = new URL(`${API_BASE}/beets/tracks/duplicates`, window.location.origin);
+  if (folders && folders.length > 0) {
+    url.searchParams.set("folders", folders.join(","));
+  }
+  return handle(await fetch(url.pathname + url.search));
+}
+
+export async function fetchLibraryFolders() {
+  return handle(await fetch(`${API_BASE}/library/folders`));
 }
 
 export async function deleteDuplicateTracks(ids) {

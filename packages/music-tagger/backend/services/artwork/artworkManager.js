@@ -4,6 +4,7 @@ import path from "path";
 import NodeID3 from "node-id3";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { captureTimestamps, restoreTimestamps } from "../timestamps.js";
 
 const execAsync = promisify(exec);
 
@@ -60,6 +61,10 @@ async function writeArtworkMP3(filePath, imageBuffer, mime) {
 }
 
 async function writeArtworkFLAC(filePath, imageBuffer, mime) {
+  // Capture timestamps before writing (metaflac artwork embedding rewrites
+  // the file via temp+rename, which changes birthtime on APFS)
+  const originalTimestamps = await captureTimestamps(filePath);
+
   // Write image to a temp file first
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "artwork-"));
   const imgPath = path.join(tmpDir, `cover${getExtForMime(mime)}`);
@@ -78,6 +83,9 @@ async function writeArtworkFLAC(filePath, imageBuffer, mime) {
   try {
     await fs.rmdir(tmpDir);
   } catch {}
+
+  // Restore original timestamps (preserves birthtime/date created)
+  await restoreTimestamps(filePath, originalTimestamps);
 }
 
 export async function embedArtworkToFile(filePath, image) {

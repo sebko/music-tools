@@ -1,12 +1,9 @@
 import crypto from "crypto";
 import fs from "fs/promises";
-import pkg from "@prisma/client";
-const { PrismaClient } = pkg;
+import { prisma } from "../prisma/client.js";
 import { getPlexAlbums, getAlbumLocation, getPlexAlbum, getPlexAlbumArtworkUrls } from "./plexClient.js";
 import { recordMetadataMatch } from "./enhancementLayer.js";
 import { getImageDimensions } from "./imageDimensions.js";
-
-const prisma = new PrismaClient();
 
 // Scan progress state
 let scanState = {

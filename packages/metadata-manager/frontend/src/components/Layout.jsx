@@ -4,6 +4,7 @@ import { ThemeToggle, AppShell, NavLink } from "@dj-tools/my-component-library";
 function Layout({ children }) {
   const location = useLocation();
   const isLibraryActive = location.pathname === "/" || location.pathname.startsWith("/albums");
+  const isInboxActive = location.pathname.startsWith("/inbox");
   const isGenresActive = location.pathname === "/genres";
   const isSettingsActive = location.pathname === "/settings";
 
@@ -20,6 +21,9 @@ function Layout({ children }) {
         <>
           <NavLink isActive={isLibraryActive} asChild>
             <Link to="/">Library</Link>
+          </NavLink>
+          <NavLink isActive={isInboxActive} asChild>
+            <Link to="/inbox">Inbox</Link>
           </NavLink>
           <NavLink isActive={isGenresActive} asChild>
             <Link to="/genres">Genres</Link>

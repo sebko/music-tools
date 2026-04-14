@@ -15,7 +15,7 @@ function SetupGate({ children }) {
 
   // If status check fails, fall through to content — don't block the app
   // if the backend hiccups; the user can still navigate manually.
-  if (!isError && !data?.setupComplete) {
+  if (!isError && (!data?.setupComplete || !data?.dbExists)) {
     return <Navigate to="/setup" replace />;
   }
 

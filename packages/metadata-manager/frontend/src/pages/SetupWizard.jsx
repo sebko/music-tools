@@ -26,18 +26,20 @@ import {
   fetchUnprocessedFiles,
   deleteUnprocessedFiles,
   fetchDuplicateGroups,
+  fetchLibraryFolders,
   deleteDuplicateTracks,
   runBeetsPlugin,
   markSetupComplete,
 } from "../api/setup";
 import { useOperationPolling } from "../hooks/useOperationPolling";
 
+// Note: "identify" step is hidden from the wizard but the code (StepIdentify
+// component + /api/beets/identify endpoint) is kept for future use or CLI access.
 const STEPS = [
   { id: "welcome", label: "Welcome" },
   { id: "library", label: "Library" },
   { id: "import", label: "Import" },
   { id: "cleanup", label: "Cleanup" },
-  { id: "identify", label: "Identify" },
   { id: "duplicates", label: "Duplicates" },
   { id: "scrub", label: "Scrub" },
   { id: "complete", label: "Done" },
@@ -646,18 +648,50 @@ function filenameOf(path) {
 }
 
 function StepDuplicates({ onNext, onBack }) {
+  const [folders, setFolders] = useState([]);
+  const [checkedFolders, setCheckedFolders] = useState(new Set());
   const [groups, setGroups] = useState(null);
+  const [scanning, setScanning] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [selected, setSelected] = useState(new Set());
   const [deletedCount, setDeletedCount] = useState(null);
+  const [failedCount, setFailedCount] = useState(null);
 
+  // Fetch available folders on mount
   useEffect(() => {
     let cancelled = false;
-    fetchDuplicateGroups()
+    fetchLibraryFolders()
       .then((data) => {
         if (cancelled) return;
+        const f = data.folders || [];
+        setFolders(f);
+        // Default: all checked
+        setCheckedFolders(new Set(f));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const toggleFolder = (folder) => {
+    setCheckedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folder)) next.delete(folder);
+      else next.add(folder);
+      return next;
+    });
+  };
+
+  const selectAllFolders = () => setCheckedFolders(new Set(folders));
+  const clearAllFolders = () => setCheckedFolders(new Set());
+
+  const scanDuplicates = () => {
+    setGroups(null);
+    setLoadError(null);
+    setScanning(true);
+    const selectedFolders = [...checkedFolders];
+    fetchDuplicateGroups(selectedFolders.length < folders.length ? selectedFolders : [])
+      .then((data) => {
         setGroups(data.groups);
-        // Default: preselect every non-keeper across every group.
         const preset = new Set();
         for (const g of data.groups) {
           for (const item of g.items) {
@@ -666,19 +700,17 @@ function StepDuplicates({ onNext, onBack }) {
         }
         setSelected(preset);
       })
-      .catch((err) => {
-        if (!cancelled) setLoadError(err.message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      .catch((err) => setLoadError(err.message))
+      .finally(() => setScanning(false));
+  };
 
   const deleteMutation = useMutation({
     mutationFn: deleteDuplicateTracks,
     onSuccess: (data) => {
       const deletedIds = new Set(data.deleted);
       setDeletedCount(data.deleted.length);
+      const failedTotal = (data.failed || []).reduce((sum, f) => sum + f.ids.length, 0);
+      setFailedCount(failedTotal);
       setGroups((prev) =>
         (prev || [])
           .map((g) => ({
@@ -713,6 +745,7 @@ function StepDuplicates({ onNext, onBack }) {
   const clearAll = () => setSelected(new Set());
 
   const totalFiles = (groups || []).reduce((acc, g) => acc + g.items.length, 0);
+  const hasScanned = groups !== null;
 
   return (
     <div className="card-brutalist p-6 space-y-4">
@@ -723,8 +756,59 @@ function StepDuplicates({ onNext, onBack }) {
         </h2>
       </div>
       <p className="text-foreground/80">
-        beets found these groups of tracks that share artist, album, title, and length. Only well-tagged items are checked — untagged files are skipped so you don&apos;t get false positives. The highest-bitrate copy in each group is marked as the keeper by default.
+        Find groups of tracks that share artist and title across the selected folders. The cleanest copy in each group is marked as the keeper.
       </p>
+
+      {/* Folder selector */}
+      {folders.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-heading text-foreground/80">Folders:</span>
+            <button
+              className="text-main text-xs hover:underline"
+              onClick={selectAllFolders}
+            >
+              All
+            </button>
+            <button
+              className="text-main text-xs hover:underline"
+              onClick={clearAllFolders}
+            >
+              None
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {folders.map((folder) => (
+              <label
+                key={folder}
+                className="flex items-center gap-1.5 px-2 py-1 border-2 border-border rounded-base text-sm font-mono cursor-pointer hover:bg-main/5 transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={checkedFolders.has(folder)}
+                  onChange={() => toggleFolder(folder)}
+                />
+                {folder}
+              </label>
+            ))}
+          </div>
+          {hasScanned && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={scanDuplicates}
+              isDisabled={checkedFolders.size === 0 || scanning}
+            >
+              {scanning ? (
+                <span className="flex items-center gap-2">
+                  <Loader className="w-4 h-4 animate-spin" />
+                  Scanning...
+                </span>
+              ) : "Re-scan"}
+            </Button>
+          )}
+        </div>
+      )}
 
       {loadError && (
         <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
@@ -733,29 +817,41 @@ function StepDuplicates({ onNext, onBack }) {
         </div>
       )}
 
-      {groups === null && !loadError && (
+      {scanning && (
         <div className="flex items-center gap-3 text-foreground/80">
           <Loader className="w-5 h-5 animate-spin text-main" />
-          Scanning library for duplicates...
+          Scanning {checkedFolders.size} folder{checkedFolders.size === 1 ? "" : "s"} for duplicates...
         </div>
       )}
 
       {deletedCount !== null && (
-        <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-          <Check className="w-4 h-4" />
-          Removed {deletedCount} track{deletedCount === 1 ? "" : "s"}.
+        <div className="flex items-center gap-2 text-sm">
+          {deletedCount > 0 && (
+            <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+              <Check className="w-4 h-4" />
+              Removed {deletedCount} track{deletedCount === 1 ? "" : "s"}.
+            </span>
+          )}
+          {failedCount > 0 && (
+            <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
+              <AlertCircle className="w-4 h-4" />
+              {deletedCount === 0
+                ? `Failed to remove ${failedCount} track${failedCount === 1 ? "" : "s"}. Check the server logs.`
+                : `${failedCount} could not be removed.`}
+            </span>
+          )}
         </div>
       )}
 
-      {groups && groups.length === 0 && (
+      {hasScanned && groups.length === 0 && (
         <EmptyState
           icon={<Check className="w-12 h-12" />}
           heading="No duplicates found"
-          description="beets didn't find any duplicate tracks in the well-tagged part of your library. Files without enough tag metadata are skipped."
+          description="No duplicate tracks found in the selected folders."
         />
       )}
 
-      {groups && groups.length > 0 && (
+      {hasScanned && groups.length > 0 && (
         <>
           <div className="flex items-center gap-3 text-sm flex-wrap">
             <span className="text-foreground/60">
@@ -840,9 +936,30 @@ function StepDuplicates({ onNext, onBack }) {
         <Button variant="default" size="md" onClick={onBack}>
           Back
         </Button>
-        <Button variant="primary" size="md" onClick={onNext}>
-          Continue
-        </Button>
+        {!hasScanned ? (
+          <div className="flex items-center gap-3">
+            <Button variant="default" size="md" onClick={onNext}>
+              Skip
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={scanDuplicates}
+              isDisabled={checkedFolders.size === 0 || scanning}
+            >
+              {scanning ? (
+                <span className="flex items-center gap-2">
+                  <Loader className="w-4 h-4 animate-spin" />
+                  Scanning...
+                </span>
+              ) : "Scan for duplicates"}
+            </Button>
+          </div>
+        ) : (
+          <Button variant="primary" size="md" onClick={onNext}>
+            Continue
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -854,31 +971,30 @@ function StepDuplicates({ onNext, onBack }) {
 
 function StepScrub({ onNext }) {
   const [operationId, setOperationId] = useState(null);
-  // Same guard as StepImport — prevents React 18 strict mode from firing
-  // `beet scrub` twice in dev.
-  const startedRef = useRef(false);
+  const [showLog, setShowLog] = useState(false);
 
   const startMutation = useMutation({
     mutationFn: () => runBeetsPlugin("scrub"),
     onSuccess: (data) => setOperationId(data.operationId),
   });
 
-  useEffect(() => {
-    if (!startedRef.current) {
-      startedRef.current = true;
-      startMutation.mutate();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const { data: operation } = useOperationPolling(operationId);
 
+  const hasStarted = startMutation.isPending || startMutation.isSuccess || startMutation.isError;
   const status = operation?.status;
   const isRunning =
     status === "running" ||
-    (!operation && startedRef.current && !operationId && startMutation.isPending);
+    (!operation && hasStarted && !operationId && startMutation.isPending);
   const isComplete = status === "completed";
   const isFailed = status === "failed" || startMutation.isError;
+
+  const total = operation?.total ?? 0;
+  // When complete, snap to total so the bar lands at 100% even if the parser
+  // missed a line or two from the final stderr flush.
+  const processed = isComplete && total
+    ? total
+    : Math.min(operation?.processed ?? 0, total || Infinity);
+  const percent = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
 
   return (
     <div className="card-brutalist p-6 space-y-4">
@@ -892,10 +1008,35 @@ function StepScrub({ onNext }) {
         Strips non-essential tag frames from files and re-writes clean tags from the beets database. This runs across every track in your library.
       </p>
 
-      {isRunning && (
+      {(isRunning || isComplete) && total > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-sm font-mono text-foreground/80">
+            <span>
+              {isRunning && (
+                <Loader className="inline w-4 h-4 animate-spin text-main mr-2 -mt-0.5" />
+              )}
+              Scrubbed {processed.toLocaleString()} / {total.toLocaleString()}
+            </span>
+            <span>{percent}%</span>
+          </div>
+          <div className="card-brutalist h-3 p-0 overflow-hidden">
+            <div
+              className="h-full bg-main transition-[width] duration-300 ease-out"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          {isRunning && operation?.currentFile && (
+            <div className="text-xs font-mono text-foreground/60 truncate">
+              Current: {operation.currentFile}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isRunning && total === 0 && (
         <div className="flex items-center gap-3 text-foreground/80">
           <Loader className="w-5 h-5 animate-spin text-main" />
-          Running <code>beet scrub</code>...
+          Starting <code>beet scrub</code>...
         </div>
       )}
 
@@ -915,29 +1056,54 @@ function StepScrub({ onNext }) {
         </div>
       )}
 
-      {(operation?.output || isRunning) && (
-        <pre className="card-brutalist p-4 text-xs font-mono text-foreground/80 whitespace-pre-wrap max-h-80 overflow-y-auto">
-          {operation?.output || "Starting..."}
-        </pre>
+      {operation?.output && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowLog((v) => !v)}
+            className="text-xs font-mono text-foreground/60 hover:text-foreground underline"
+          >
+            {showLog ? "Hide" : "Show"} details
+          </button>
+          {showLog && (
+            <pre className="card-brutalist p-4 mt-2 text-xs font-mono text-foreground/80 whitespace-pre-wrap max-h-80 overflow-y-auto">
+              {operation.output}
+            </pre>
+          )}
+        </div>
       )}
 
-      <div className="flex justify-between">
-        <Button
-          variant="default"
-          size="md"
-          onClick={onNext}
-          isDisabled={isRunning}
-        >
-          Skip
-        </Button>
-        <Button
-          variant="primary"
-          size="md"
-          onClick={onNext}
-          isDisabled={isRunning || !isComplete}
-        >
-          Continue
-        </Button>
+      <div className="flex justify-between pt-4">
+        <span />
+        {!hasStarted ? (
+          <div className="flex items-center gap-3">
+            <Button variant="default" size="md" onClick={onNext}>
+              Skip
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => startMutation.mutate()}
+              isDisabled={startMutation.isPending}
+            >
+              {startMutation.isPending ? (
+                <span className="flex items-center gap-2">
+                  <Loader className="w-4 h-4 animate-spin" />
+                  Starting...
+                </span>
+              ) : "Scrub tags"}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="primary"
+            size="md"
+            onClick={onNext}
+            isDisabled={isRunning || (!isComplete && !isFailed)}
+          >
+            Continue
+          </Button>
+        )}
       </div>
     </div>
   );

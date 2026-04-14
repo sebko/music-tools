@@ -1,7 +1,4 @@
-import pkg from "@prisma/client";
-const { PrismaClient } = pkg;
-
-const prisma = new PrismaClient();
+import { prisma } from "../prisma/client.js";
 
 /**
  * Get metadata service matches for an album by Plex rating key

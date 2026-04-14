@@ -61,10 +61,32 @@ export function parseDuplicatesOutput(stdout) {
   return groups.sort((a, b) => b.count - a.count);
 }
 
+/**
+ * Score a path by how "clean" its filename is. Higher = cleaner.
+ * Penalizes date-stamp artifacts ("04.55.09"), copy suffixes (" 2."), and
+ * excessive length — common in Dropbox conflict copies and timestamped backups.
+ */
+function pathCleanlinessScore(path) {
+  const filename = path.split("/").pop();
+  let score = 0;
+  // Penalize repeated date-stamp patterns like "04.55.09"
+  const stamps = filename.match(/\d{2}\.\d{2}\.\d{2}/g) || [];
+  score -= stamps.length * 10;
+  // Penalize copy suffixes like " 2.", " 3."
+  const copies = filename.match(/ \d+\./g) || [];
+  score -= copies.length * 5;
+  // Penalize longer filenames (more appended junk)
+  score -= Math.max(0, filename.length - 40);
+  return score;
+}
+
 function buildGroup(chunk) {
-  // Keeper heuristic: highest bitrate → newest `added` → lowest id.
+  // Keeper heuristic: highest bitrate → cleanest path → newest added → lowest id.
   const sorted = [...chunk].sort((a, b) => {
     if (b.bitrate !== a.bitrate) return b.bitrate - a.bitrate;
+    const aClean = pathCleanlinessScore(a.path);
+    const bClean = pathCleanlinessScore(b.path);
+    if (bClean !== aClean) return bClean - aClean;
     if (b.added !== a.added) return b.added.localeCompare(a.added);
     return a.id - b.id;
   });

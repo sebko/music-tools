@@ -7,6 +7,9 @@
 # Dependencies
 node_modules/
 
+# Generated Prisma client (per-package output, see CLAUDE.md)
+generated/
+
 # Database files
 *.db
 *.db-journal

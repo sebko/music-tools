@@ -1,9 +1,6 @@
-import pkg from "@prisma/client";
-const { PrismaClient } = pkg;
+import { prisma } from "../../prisma/client.js";
 import { searchRedacted } from "./redacted.js";
 import { REDACTED } from "../../constants/metadataServices.js";
-
-const prisma = new PrismaClient();
 
 /**
  * Core metadata scanning function - used by both individual and bulk scanning

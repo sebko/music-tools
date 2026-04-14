@@ -6,11 +6,12 @@
  */
 
 import NodeID3 from "node-id3";
-import { readdir, rename, stat, unlink, utimes } from "fs/promises";
+import { readdir, rename, stat, unlink } from "fs/promises";
 import { join, extname } from "path";
 import { exec, execFile } from "child_process";
 import { promisify } from "util";
 import { fetchImage, embedArtworkToFile } from "./artwork/artworkManager.js";
+import { captureTimestamps, restoreTimestamps } from "./timestamps.js";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -169,22 +170,6 @@ async function writeVorbisTagsFLAC(filePath, tags) {
 }
 
 /**
- * Format a Date as a touch -t timestamp: YYYYMMDDhhmm.ss
- *
- * @param {Date} date
- * @returns {string}
- */
-function formatTouchTimestamp(date) {
-  const Y = date.getFullYear();
-  const M = String(date.getMonth() + 1).padStart(2, '0');
-  const D = String(date.getDate()).padStart(2, '0');
-  const h = String(date.getHours()).padStart(2, '0');
-  const m = String(date.getMinutes()).padStart(2, '0');
-  const s = String(date.getSeconds()).padStart(2, '0');
-  return `${Y}${M}${D}${h}${m}.${s}`;
-}
-
-/**
  * Write tags to an M4A file using AtomicParsley CLI
  *
  * Uses safe atomic file replacement to avoid padding issues:
@@ -215,9 +200,7 @@ async function writeTagsM4A(filePath, tags) {
   }
 
   // Capture original timestamps before replacement
-  const originalStat = await stat(filePath);
-  const originalBirthtime = originalStat.birthtime;
-  const originalMtime = originalStat.mtime;
+  const originalTimestamps = await captureTimestamps(filePath);
 
   try {
     await execFileAsync('AtomicParsley', args);
@@ -231,13 +214,8 @@ async function writeTagsM4A(filePath, tags) {
     // Atomic replacement - original only deleted if this succeeds
     await rename(tempPath, filePath);
 
-    // Restore original timestamps:
-    // 1. touch -t with birthtime — on macOS, setting mtime earlier than
-    //    current birthtime forces the OS to lower birthtime to match
-    const birthtimeStr = formatTouchTimestamp(originalBirthtime);
-    await execFileAsync('touch', ['-t', birthtimeStr, filePath]);
-    // 2. Restore original mtime (touch above set mtime to birthtime)
-    await utimes(filePath, originalMtime, originalMtime);
+    // Restore original timestamps (birthtime + mtime)
+    await restoreTimestamps(filePath, originalTimestamps);
   } catch (error) {
     // Cleanup temp file on any error (original is safe)
     try { await unlink(tempPath); } catch {}
@@ -433,6 +411,11 @@ export async function writePlexMetadataToFiles(albumPath, plexAlbum, selectedFie
           continue;
         }
 
+        // Capture timestamps before writing (FLAC artwork embedding via metaflac
+        // rewrites the file with temp+rename, which changes birthtime on APFS)
+        const needsTimestampRestore = format === "flac" && (Object.keys(tags).length > 0 || artworkImage);
+        const originalTimestamps = needsTimestampRestore ? await captureTimestamps(filePath) : null;
+
         if (Object.keys(tags).length > 0) {
           if (format === "flac") {
             await writeVorbisTagsFLAC(filePath, tags);
@@ -449,6 +432,11 @@ export async function writePlexMetadataToFiles(albumPath, plexAlbum, selectedFie
           if (!artResult.success) {
             console.log(`   ⚠️ ${file} - Artwork skipped: ${artResult.error}`);
           }
+        }
+
+        // Restore original timestamps (preserves birthtime/date created)
+        if (originalTimestamps) {
+          await restoreTimestamps(filePath, originalTimestamps);
         }
 
         filesUpdated++;

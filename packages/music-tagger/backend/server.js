@@ -7,8 +7,7 @@ import { existsSync, statSync, writeFileSync, unlinkSync, copyFileSync } from "f
 import { execSync } from "child_process";
 import os from "os";
 import path from "path";
-import pkg from "@prisma/client";
-const { PrismaClient } = pkg;
+import { prisma } from "./prisma/client.js";
 import { scanAlbumMetadata } from "./services/metadata/metadataScanner.js";
 import {
   getTorrentGroup,
@@ -59,7 +58,6 @@ const PORT = process.env.PORT || 3001;
 // Debug: Log DATABASE_URL to verify correct env is loaded
 console.log(`📊 Using DATABASE_URL: ${process.env.DATABASE_URL}`);
 
-const prisma = new PrismaClient();
 
 // Bulk metadata scan state (similar to library scan)
 let bulkScanState = {

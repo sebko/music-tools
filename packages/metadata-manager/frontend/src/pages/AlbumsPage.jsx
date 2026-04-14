@@ -1,4 +1,4 @@
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useAlbums } from "../hooks/useAlbums";
 import {
@@ -16,7 +16,6 @@ import { Music, Search } from "lucide-react";
 
 function AlbumsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
 
   const limit = parseInt(searchParams.get("limit")) || 50;
   const page = Math.max(1, parseInt(searchParams.get("page")) || 1);
@@ -104,14 +103,17 @@ function AlbumsPage() {
       <>
         <CardGrid>
           {albums.map((album) => (
-            <MediaCard
+            <Link
               key={album.album}
-              imageSrc={album.artworkUrl || undefined}
-              imageAlt={album.album}
-              title={album.album}
-              subtitle={`${album.trackCount} tracks`}
-              onClick={() => navigate(`/albums/${encodeURIComponent(album.album)}`)}
-            />
+              to={`/albums/${encodeURIComponent(album.album)}`}
+            >
+              <MediaCard
+                imageSrc={album.artworkUrl || undefined}
+                imageAlt={album.album}
+                title={album.album}
+                subtitle={`${album.trackCount} tracks`}
+              />
+            </Link>
           ))}
         </CardGrid>
 

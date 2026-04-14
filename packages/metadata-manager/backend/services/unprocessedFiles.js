@@ -1,4 +1,5 @@
 import { readdir, stat } from "fs/promises";
+import { existsSync } from "fs";
 import { join, extname, resolve } from "path";
 import Database from "better-sqlite3";
 import { getBeetsLibraryDbPath } from "./beetsConfig.js";
@@ -39,12 +40,9 @@ async function walkAudioFiles(dir, out = []) {
 }
 
 function readImportedPaths() {
-  // Intentionally NOT catching Database open errors here. A silent catch was
-  // previously returning an empty set when the native binding was broken,
-  // which made every file on disk look like an orphan — the "cleanup" step
-  // then offered to delete the entire library. Fail loudly instead.
   const dbPath = getBeetsLibraryDbPath();
-  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  if (!existsSync(dbPath)) return new Set();
+  const db = new Database(dbPath, { readonly: true });
   try {
     const rows = db.prepare("SELECT CAST(path AS TEXT) as path FROM items").all();
     return new Set(rows.map((r) => resolve(r.path)));

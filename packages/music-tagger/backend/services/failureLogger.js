@@ -5,10 +5,7 @@
  * Supports bulk_scan, bulk_sync_plex, and bulk_sync_files operations.
  */
 
-import pkg from "@prisma/client";
-const { PrismaClient } = pkg;
-
-const prisma = new PrismaClient();
+import { prisma } from "../prisma/client.js";
 
 /**
  * Log a sync failure to the database

@@ -6,12 +6,9 @@
  * - Bulk sync endpoint (POST /api/albums/bulk-sync)
  */
 
-import pkg from "@prisma/client";
-const { PrismaClient } = pkg;
+import { prisma } from "../prisma/client.js";
 import { getPlexAlbum } from "./plexClient.js";
 import { writePlexMetadata } from "./plexMetadataWriter.js";
-
-const prisma = new PrismaClient();
 
 /**
  * Sync album metadata to Plex

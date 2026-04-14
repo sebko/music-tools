@@ -1,10 +1,11 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "@dj-tools/my-component-library";
 import Layout from "./components/Layout";
 import SetupGate from "./components/SetupGate";
 import AlbumsPage from "./pages/AlbumsPage";
 import AlbumDetailPage from "./pages/AlbumDetailPage";
 import GenresPage from "./pages/GenresPage";
+import InboxPage from "./pages/InboxPage";
 import SettingsPage from "./pages/SettingsPage";
 import SetupWizard from "./pages/SetupWizard";
 
@@ -22,7 +23,16 @@ function App() {
                 </SetupGate>
               }
             />
+            <Route path="/albums" element={<Navigate to="/" replace />} />
             <Route path="/albums/:name" element={<AlbumDetailPage />} />
+            <Route
+              path="/inbox"
+              element={
+                <SetupGate>
+                  <InboxPage />
+                </SetupGate>
+              }
+            />
             <Route path="/genres" element={<GenresPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/setup" element={<SetupWizard />} />
