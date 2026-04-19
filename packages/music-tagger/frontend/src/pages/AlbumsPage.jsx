@@ -76,22 +76,28 @@ function AlbumsPage() {
   const {
     showScanModal,
     handleStartScan,
+    handleStartScanAll,
     handleScanComplete,
     handleCloseScanModal,
     isStartingScan,
   } = useLibraryScanManager();
 
-  // Auto-start scan when navigated here with ?scan=true
+  // Auto-start scan when navigated here with ?scan=true or ?scan=all
   // useRef prevents double-invocation from React StrictMode
   const autoScanFiredRef = useRef(false);
   useEffect(() => {
-    if (searchParams.get("scan") !== "true") return;
+    const scanParam = searchParams.get("scan");
+    if (!scanParam) return;
     if (autoScanFiredRef.current) return;
     autoScanFiredRef.current = true;
     const newParams = new URLSearchParams(searchParams);
     newParams.delete("scan");
     setSearchParams(newParams, { replace: true });
-    handleStartScan();
+    if (scanParam === "all") {
+      handleStartScanAll();
+    } else {
+      handleStartScan();
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Bulk metadata scan hook

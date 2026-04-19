@@ -130,6 +130,10 @@ app.use((req, res, next) => {
   next();
 });
 
+// Active library middleware - attach req.activeLibrary from header or DB
+import { activeLibraryMiddleware, invalidateLibraryCache } from "./middleware/activeLibrary.js";
+app.use(activeLibraryMiddleware);
+
 // Health check endpoint
 app.get("/health", (req, res) => {
   res.json({
@@ -181,7 +185,7 @@ app.post("/api/library/scan", async (req, res) => {
     console.log("🔄 Starting Plex library scan in background...");
 
     // Start scan in background (don't await)
-    scanPlexLibrary().catch(error => {
+    scanPlexLibrary(req.activeLibrary).catch(error => {
       console.error("Background scan error:", error);
     });
 
@@ -231,6 +235,57 @@ app.delete("/api/library/scan", (req, res) => {
   }
 });
 
+// Scan all available libraries sequentially
+app.post("/api/library/scan-all", async (req, res) => {
+  try {
+    const progress = getScanProgress();
+    if (progress.isScanning) {
+      return res.status(409).json({
+        success: false,
+        error: "Scan already in progress",
+        message: "Scan already in progress",
+      });
+    }
+
+    const settings = await prisma.plexSettings.findUnique({ where: { id: "singleton" } });
+    const libraries = settings?.availableLibraries ? JSON.parse(settings.availableLibraries) : [];
+    if (libraries.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "No libraries configured",
+      });
+    }
+
+    console.log(`🔄 Starting scan for ${libraries.length} libraries: ${libraries.join(", ")}`);
+
+    // Scan each library sequentially in background
+    (async () => {
+      for (const lib of libraries) {
+        const currentProgress = getScanProgress();
+        if (currentProgress.shouldStop) break;
+        try {
+          await scanPlexLibrary(lib);
+        } catch (error) {
+          console.error(`Scan error for library "${lib}":`, error);
+        }
+      }
+    })().catch(error => {
+      console.error("Background scan-all error:", error);
+    });
+
+    res.json({
+      success: true,
+      message: `Scanning ${libraries.length} libraries: ${libraries.join(", ")}`,
+    });
+  } catch (error) {
+    console.error("Failed to start scan-all:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 // Bulk metadata scan endpoint - Start scan in background
 app.post("/api/albums/bulk-metadata-scan", async (req, res) => {
   try {
@@ -272,7 +327,7 @@ app.post("/api/albums/bulk-metadata-scan", async (req, res) => {
         });
 
         // Fetch albums to process (unmatched only, or all if includeMatched=true)
-        const whereClause = includeMatched ? {} : { matchStatus: "UNMATCHED" };
+        const whereClause = includeMatched ? { libraryName: req.activeLibrary } : { matchStatus: "UNMATCHED", libraryName: req.activeLibrary };
         const albumsToProcess = await prisma.album.findMany({
           where: whereClause,
           select: {
@@ -350,7 +405,7 @@ app.post("/api/albums/bulk-metadata-scan", async (req, res) => {
               console.log(`   → Recording Redacted groupId ${bestResult.groupId}`);
 
               // Record the match (same as individual match)
-              await recordMetadataMatch(album.plexRatingKey, "redacted", bestResult.groupId);
+              await recordMetadataMatch(album.plexRatingKey, "redacted", bestResult.groupId, req.activeLibrary);
               bulkScanState.matched++;
             } else if (bestResult) {
               console.log(`   ⚠️  SKIP (low confidence): ${bestResult.confidence}% < ${minConfidence}% threshold`);
@@ -372,7 +427,7 @@ app.post("/api/albums/bulk-metadata-scan", async (req, res) => {
               plexRatingKey: album.plexRatingKey,
               title: album.title,
               artist: album.artist,
-            });
+            }, null, req.activeLibrary);
           }
         }
 
@@ -505,6 +560,7 @@ app.post("/api/albums/bulk-sync", async (req, res) => {
         const albumsToSync = await prisma.album.findMany({
           where: {
             matchStatus: "MATCHED",
+            libraryName: req.activeLibrary,
             metadataMatches: {
               some: {
                 metadataServiceId: redactedService.id,
@@ -588,8 +644,7 @@ app.post("/api/albums/bulk-sync", async (req, res) => {
 
             // 3. Use shared syncAlbumToPlex service (same as individual sync)
             // Pass selectedFields to track which fields were synced in database
-            const syncResult = await syncAlbumToPlex(album.plexRatingKey, metadata, { selectedFields });
-
+            const syncResult = await syncAlbumToPlex(album.plexRatingKey, metadata, { selectedFields, libraryName: req.activeLibrary });
             if (!syncResult.success) {
               throw new Error(syncResult.error || "Failed to sync to Plex");
             }
@@ -614,7 +669,7 @@ app.post("/api/albums/bulk-sync", async (req, res) => {
               artist: album.artist,
               selectedFields,
               redactedGroupId: redactedMatch?.externalId,
-            });
+            }, null, req.activeLibrary);
 
             bulkSyncState.shouldStop = true; // Stop the loop
             break;
@@ -721,6 +776,7 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
         const albumsToSync = await prisma.album.findMany({
           where: {
             matchStatus: 'SYNCED',  // Must be synced from Redacted to Plex
+            libraryName: req.activeLibrary,
             ...(resync
               ? { plexFileSync: { isNot: null } }  // Re-sync: already synced to files
               : { plexFileSync: null }              // Initial sync: not yet synced to files
@@ -773,6 +829,7 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
                 albumId: album.id,
                 syncedFields: JSON.stringify(selectedFields),
                 lastSyncedAt: new Date(),
+                libraryName: req.activeLibrary,
               },
               update: {
                 syncedFields: JSON.stringify(selectedFields),
@@ -795,7 +852,7 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
               filePath: album.filePath,
               plexRatingKey: album.plexRatingKey,
               selectedFields,
-            });
+            }, null, req.activeLibrary);
 
             bulkSyncToFilesState.failed++;
             bulkSyncToFilesState.error = `Failed to sync "${album.artist} - ${album.title}": ${error.message}`;
@@ -1005,7 +1062,7 @@ app.get("/api/albums/:id", async (req, res) => {
     }
 
     // Fetch metadata matches from enhancement layer
-    const metadataMatches = await getAlbumMetadataMatches(req.params.id);
+    const metadataMatches = await getAlbumMetadataMatches(req.params.id, req.activeLibrary);
     album.metadataMatches = metadataMatches;
 
     // Fetch sync status from plex_file_syncs table (Plex → Files sync tracking)
@@ -1153,7 +1210,7 @@ app.post("/api/albums/:id/metadata/match", async (req, res) => {
     }
 
     // Record the match (updates matchStatus to MATCHED)
-    const result = await recordMetadataMatch(albumId, service, groupId);
+    const result = await recordMetadataMatch(albumId, service, groupId, req.activeLibrary);
 
     if (result.success) {
       res.json({
@@ -1248,7 +1305,7 @@ app.post("/api/albums/:id/metadata/apply", async (req, res) => {
         };
 
         // Use shared sync service which handles Plex write + DB status update
-        const syncResult = await syncAlbumToPlex(albumId, metadata, { selectedFields });
+        const syncResult = await syncAlbumToPlex(albumId, metadata, { selectedFields, libraryName: req.activeLibrary });
         results.plex = {
           success: syncResult.success,
           message: syncResult.message,
@@ -1343,7 +1400,7 @@ app.post("/api/albums/:id/sync-to-files", async (req, res) => {
     if (result.success) {
       // Find the album in our database by Plex rating key
       const dbAlbum = await prisma.album.findUnique({
-        where: { plexRatingKey: albumId },
+        where: { plexRatingKey_libraryName: { plexRatingKey: albumId, libraryName: req.activeLibrary } },
       });
 
       if (dbAlbum) {
@@ -1354,6 +1411,7 @@ app.post("/api/albums/:id/sync-to-files", async (req, res) => {
             albumId: dbAlbum.id,
             syncedFields: JSON.stringify(selectedFields),
             lastSyncedAt: new Date(),
+            libraryName: req.activeLibrary,
           },
           update: {
             syncedFields: JSON.stringify(selectedFields),
@@ -1674,7 +1732,7 @@ app.get("/api/albums", async (req, res) => {
     const search = req.query.search;
 
     // Build where clause based on filter and service
-    const where = {};
+    const where = { libraryName: req.activeLibrary };
 
     // Search by title or artist (SQLite LIKE is case-insensitive for ASCII)
     if (search && search.trim()) {
@@ -2082,7 +2140,7 @@ app.post("/api/albums/:id/artwork/embed", async (req, res) => {
         const dimensions = getImageDimensionsFromBuffer(image.data);
         if (dimensions) {
           const dbAlbum = await prisma.album.findUnique({
-            where: { plexRatingKey: albumId },
+            where: { plexRatingKey_libraryName: { plexRatingKey: albumId, libraryName: req.activeLibrary } },
           });
           if (dbAlbum) {
             await prisma.album.update({
@@ -2173,7 +2231,7 @@ app.post("/api/albums/:id/artwork/upload", upload.single("artwork"), async (req,
         const dimensions = getImageDimensionsFromBuffer(file.buffer);
         if (dimensions) {
           const dbAlbum = await prisma.album.findUnique({
-            where: { plexRatingKey: albumId },
+            where: { plexRatingKey_libraryName: { plexRatingKey: albumId, libraryName: req.activeLibrary } },
           });
           if (dbAlbum) {
             await prisma.album.update({
@@ -2217,7 +2275,7 @@ app.get("/api/sync-failures", async (req, res) => {
     const operation = req.query.operation || null;
     const limit = parseInt(req.query.limit) || 50;
 
-    const failures = await getRecentFailures(operation, limit);
+    const failures = await getRecentFailures(operation, limit, req.activeLibrary);
 
     res.json({
       success: true,
@@ -2235,7 +2293,7 @@ app.get("/api/sync-failures", async (req, res) => {
 // Get failure counts by operation type
 app.get("/api/sync-failures/counts", async (req, res) => {
   try {
-    const counts = await getFailureCounts();
+    const counts = await getFailureCounts(req.activeLibrary);
 
     res.json({
       success: true,
@@ -2255,7 +2313,7 @@ app.delete("/api/sync-failures", async (req, res) => {
   try {
     const operation = req.query.operation || null;
 
-    const result = await clearFailures(operation);
+    const result = await clearFailures(operation, req.activeLibrary);
 
     res.json({
       success: true,
@@ -2286,7 +2344,9 @@ app.get("/api/settings/plex", async (req, res) => {
       configured: !!settings.token,
       hasToken: !!settings.token,
       serverName: settings.serverName || null,
-      libraryName: settings.libraryName || null,
+      libraryName: settings.activeLibraryName || null,
+      activeLibraryName: settings.activeLibraryName || null,
+      availableLibraries: settings.availableLibraries ? JSON.parse(settings.availableLibraries) : [],
     });
   } catch (err) {
     console.error("Error fetching plex settings:", err);
@@ -2297,10 +2357,11 @@ app.get("/api/settings/plex", async (req, res) => {
 // PUT /api/settings/plex - save server/library selection (token comes from OAuth)
 app.put("/api/settings/plex", async (req, res) => {
   try {
-    const { serverName, libraryName } = req.body;
+    const { serverName, libraryName, availableLibraries } = req.body;
     const data = {};
     if (serverName !== undefined) data.serverName = serverName;
-    if (libraryName !== undefined) data.libraryName = libraryName;
+    if (libraryName !== undefined) data.activeLibraryName = libraryName;
+    if (availableLibraries !== undefined) data.availableLibraries = JSON.stringify(availableLibraries);
 
     await prisma.plexSettings.upsert({
       where: { id: "singleton" },
@@ -2352,7 +2413,7 @@ app.delete("/api/settings/plex/token", async (req, res) => {
     // 4. Clear Plex settings
     await prisma.plexSettings.upsert({
       where: { id: "singleton" },
-      update: { token: null, serverName: null, libraryName: null },
+      update: { token: null, serverName: null, activeLibraryName: null, availableLibraries: '[]' },
       create: { id: "singleton" },
     });
 
@@ -2468,9 +2529,84 @@ app.get("/api/settings/plex/libraries", async (req, res) => {
     const libraries = sections
       .filter(s => s.type === "artist")
       .map(s => ({ key: s.key, title: s.title }));
+
+    // Save available library names to settings
+    const libraryNames = libraries.map(l => l.title);
+    await prisma.plexSettings.upsert({
+      where: { id: "singleton" },
+      update: { availableLibraries: JSON.stringify(libraryNames) },
+      create: { id: "singleton", availableLibraries: JSON.stringify(libraryNames) },
+    });
+
     res.json({ libraries });
   } catch (err) {
     console.error("Error fetching plex libraries:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/settings/plex/active-library - Switch active library
+app.put("/api/settings/plex/active-library", async (req, res) => {
+  try {
+    const { activeLibraryName } = req.body;
+    if (!activeLibraryName || typeof activeLibraryName !== "string") {
+      return res.status(400).json({ error: "activeLibraryName is required" });
+    }
+
+    // Validate against available libraries
+    const settings = await prisma.plexSettings.findUnique({ where: { id: "singleton" } });
+    const available = settings?.availableLibraries ? JSON.parse(settings.availableLibraries) : [];
+    if (available.length > 0 && !available.includes(activeLibraryName)) {
+      return res.status(400).json({
+        error: `Library "${activeLibraryName}" not found. Available: ${available.join(", ")}`,
+      });
+    }
+
+    await prisma.plexSettings.upsert({
+      where: { id: "singleton" },
+      update: { activeLibraryName },
+      create: { id: "singleton", activeLibraryName },
+    });
+
+    // Invalidate caches so new library takes effect immediately
+    invalidateLibraryCache();
+    clearPlexCache();
+
+    console.log(`🔄 Active library switched to "${activeLibraryName}"`);
+    res.json({ success: true, activeLibraryName });
+  } catch (err) {
+    console.error("Error setting active library:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/settings/plex/libraries-with-counts - List libraries with album counts
+app.get("/api/settings/plex/libraries-with-counts", async (req, res) => {
+  try {
+    const settings = await prisma.plexSettings.findUnique({ where: { id: "singleton" } });
+    const availableLibraries = settings?.availableLibraries
+      ? JSON.parse(settings.availableLibraries)
+      : [];
+    const activeLibraryName = settings?.activeLibraryName || "Music";
+
+    // Get album counts per library
+    const counts = await prisma.album.groupBy({
+      by: ["libraryName"],
+      _count: { libraryName: true },
+    });
+
+    const countMap = {};
+    counts.forEach(c => { countMap[c.libraryName] = c._count.libraryName; });
+
+    const libraries = availableLibraries.map(name => ({
+      name,
+      albumCount: countMap[name] || 0,
+      isActive: name === activeLibraryName,
+    }));
+
+    res.json({ libraries, activeLibraryName });
+  } catch (err) {
+    console.error("Error fetching libraries with counts:", err);
     res.status(500).json({ error: err.message });
   }
 });

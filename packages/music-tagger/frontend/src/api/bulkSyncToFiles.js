@@ -1,4 +1,4 @@
-const API_BASE = "/api";
+import { apiJson } from "./client.js";
 
 /**
  * Start bulk sync of Plex metadata to local file tags
@@ -7,18 +7,11 @@ const API_BASE = "/api";
  * @returns {Promise<Object>} Response with success status
  */
 export async function startBulkSyncToFiles(selectedFields, resync = false) {
-  const response = await fetch(`${API_BASE}/albums/bulk-sync-to-files`, {
+  return apiJson("/albums/bulk-sync-to-files", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ selectedFields, resync }),
   });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => null);
-    throw new Error(errorBody?.error || "Failed to start bulk sync to files");
-  }
-
-  return response.json();
 }
 
 /**
@@ -26,13 +19,7 @@ export async function startBulkSyncToFiles(selectedFields, resync = false) {
  * @returns {Promise<Object>} Progress state object
  */
 export async function getBulkSyncToFilesProgress() {
-  const response = await fetch(`${API_BASE}/albums/bulk-sync-to-files/progress`);
-
-  if (!response.ok) {
-    throw new Error("Failed to get bulk sync to files progress");
-  }
-
-  return response.json();
+  return apiJson("/albums/bulk-sync-to-files/progress");
 }
 
 /**
@@ -40,13 +27,5 @@ export async function getBulkSyncToFilesProgress() {
  * @returns {Promise<Object>} Response with success status
  */
 export async function stopBulkSyncToFiles() {
-  const response = await fetch(`${API_BASE}/albums/bulk-sync-to-files`, {
-    method: "DELETE",
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to stop bulk sync to files");
-  }
-
-  return response.json();
+  return apiJson("/albums/bulk-sync-to-files", { method: "DELETE" });
 }

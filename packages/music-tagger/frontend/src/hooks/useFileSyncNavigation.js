@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchAlbums } from '../api/albums';
+import { useLibrary } from './useLibrary';
 
 /**
  * Hook for navigating between albums on the Sync to Files page
@@ -16,10 +17,11 @@ export function useFileSyncNavigation(currentAlbumId, options = {}) {
     sortBy = 'addedAt',
     sortOrder = 'desc',
   } = options;
+  const { activeLibrary } = useLibrary();
 
   // Fetch all albums synced to Plex (for navigation across all file sync states)
   const { data, isLoading } = useQuery({
-    queryKey: ['albums', 'navigation', 'file-sync', sortBy, sortOrder],
+    queryKey: ['albums', 'navigation', activeLibrary, 'file-sync', sortBy, sortOrder],
     queryFn: () => fetchAlbums({
       page: 1,
       limit: 5000, // Fetch up to 5000 albums

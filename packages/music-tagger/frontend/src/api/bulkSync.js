@@ -1,4 +1,4 @@
-const API_BASE = "/api";
+import { apiJson } from "./client.js";
 
 /**
  * Start a bulk sync operation
@@ -6,18 +6,11 @@ const API_BASE = "/api";
  * @returns {Promise<Object>} Response with success status
  */
 export async function startBulkSync(selectedFields) {
-  const response = await fetch(`${API_BASE}/albums/bulk-sync`, {
+  return apiJson("/albums/bulk-sync", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ selectedFields }),
   });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => null);
-    throw new Error(errorBody?.error || "Failed to start bulk sync");
-  }
-
-  return response.json();
 }
 
 /**
@@ -25,13 +18,7 @@ export async function startBulkSync(selectedFields) {
  * @returns {Promise<Object>} Progress object with isSyncing, current, total, synced, failed, etc.
  */
 export async function getBulkSyncProgress() {
-  const response = await fetch(`${API_BASE}/albums/bulk-sync/progress`);
-
-  if (!response.ok) {
-    throw new Error("Failed to get bulk sync progress");
-  }
-
-  return response.json();
+  return apiJson("/albums/bulk-sync/progress");
 }
 
 /**
@@ -39,13 +26,5 @@ export async function getBulkSyncProgress() {
  * @returns {Promise<Object>} Response with success status
  */
 export async function stopBulkSync() {
-  const response = await fetch(`${API_BASE}/albums/bulk-sync`, {
-    method: "DELETE",
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to stop bulk sync");
-  }
-
-  return response.json();
+  return apiJson("/albums/bulk-sync", { method: "DELETE" });
 }

@@ -30,7 +30,7 @@ async function getPlexConfig() {
       return {
         token: dbSettings.token,
         serverName: dbSettings.serverName,
-        libraryName: dbSettings.libraryName,
+        libraryName: dbSettings.activeLibraryName,
       };
     }
   } catch (err) {
@@ -237,6 +237,36 @@ export async function getPlexServer() {
 }
 
 /**
+ * Get a specific music library section by name.
+ * Ensures the server connection is established, then looks up the named section.
+ * Does NOT use or mutate the cached `musicSection`.
+ * @param {string} libraryName - The Plex library title to connect to
+ * @returns {Promise<MusicSection>} The requested music section
+ */
+export async function getMusicSectionByName(libraryName) {
+  // Ensure server is connected (getMusicSection establishes plexServer)
+  await getMusicSection();
+
+  const library = await plexServer.library();
+  const sections = await library.sections();
+  const section = sections.find(
+    s => s.type === "artist" && s.title === libraryName
+  );
+
+  if (!section) {
+    const available = sections
+      .filter(s => s.type === "artist")
+      .map(s => s.title)
+      .join(", ");
+    throw new Error(
+      `Plex library "${libraryName}" not found. Available music libraries: ${available || "none"}`
+    );
+  }
+
+  return await library.section(section.title);
+}
+
+/**
  * Get albums from Plex with optional filters
  * @param {Object} options - Query options
  * @param {number} options.page - Page number (1-based)
@@ -261,10 +291,11 @@ export async function getPlexAlbums(options = {}) {
     updatedAfter = null,
     sort = null,
     sortDirection = "desc",
+    sectionOverride = null,
   } = options;
 
   try {
-    const section = await getMusicSection();
+    const section = sectionOverride || await getMusicSection();
 
     // Build search filters
     const searchArgs = {};
@@ -306,7 +337,7 @@ export async function getPlexAlbums(options = {}) {
       params.append("sort", sortParam);
     }
 
-    const url = `/library/sections/${musicSection.key}/all?${params.toString()}`;
+    const url = `/library/sections/${section.key}/all?${params.toString()}`;
     const response = await plexServer.query(url);
     const allAlbums = response.MediaContainer?.Metadata || [];
 

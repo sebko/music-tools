@@ -27,7 +27,7 @@ import { writePlexMetadata } from "./plexMetadataWriter.js";
  * @returns {Promise<Object>} Result with success status and details
  */
 export async function syncAlbumToPlex(albumId, metadata, options = {}) {
-  const { skipStatusUpdate = false, selectedFields = null } = options;
+  const { skipStatusUpdate = false, selectedFields = null, libraryName = "Music" } = options;
 
   console.log(`\n🔄 syncAlbumToPlex called for album: ${albumId}`);
   console.log(`   Metadata keys:`, Object.keys(metadata));
@@ -51,12 +51,12 @@ export async function syncAlbumToPlex(albumId, metadata, options = {}) {
     if (!skipStatusUpdate) {
       try {
         const existingAlbum = await prisma.album.findUnique({
-          where: { plexRatingKey: albumId },
+          where: { plexRatingKey_libraryName: { plexRatingKey: albumId, libraryName } },
         });
 
         if (existingAlbum) {
           await prisma.album.update({
-            where: { plexRatingKey: albumId },
+            where: { plexRatingKey_libraryName: { plexRatingKey: albumId, libraryName } },
             data: {
               matchStatus: "SYNCED",
               syncedAt: new Date(),
@@ -88,6 +88,7 @@ export async function syncAlbumToPlex(albumId, metadata, options = {}) {
                   albumId: existingAlbum.id,
                   syncedFields: JSON.stringify(mergedSyncedFields),
                   lastSyncedAt: new Date(),
+                  libraryName,
                 },
                 update: {
                   syncedFields: JSON.stringify(mergedSyncedFields),

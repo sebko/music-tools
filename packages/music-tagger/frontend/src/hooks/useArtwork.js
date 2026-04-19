@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { embedAlbumArtwork, uploadAlbumArtwork, bustArtworkCache } from "../api/albums";
+import { useLibrary } from "./useLibrary";
 
 /**
  * Hook to embed artwork to an album's files
@@ -8,6 +9,7 @@ import { embedAlbumArtwork, uploadAlbumArtwork, bustArtworkCache } from "../api/
  */
 export function useEmbedArtwork(albumId) {
   const queryClient = useQueryClient();
+  const { activeLibrary } = useLibrary();
 
   return useMutation({
     mutationFn: (artworkUrl) => embedAlbumArtwork(albumId, artworkUrl),
@@ -16,10 +18,10 @@ export function useEmbedArtwork(albumId) {
       bustArtworkCache(albumId);
 
       // Invalidate album query to refetch album data
-      queryClient.invalidateQueries({ queryKey: ["album", albumId] });
+      queryClient.invalidateQueries({ queryKey: ["album", activeLibrary, albumId] });
 
       // Refetch the album immediately to show the new artwork
-      queryClient.refetchQueries({ queryKey: ["album", albumId] });
+      queryClient.refetchQueries({ queryKey: ["album", activeLibrary, albumId] });
     },
   });
 }
@@ -31,6 +33,7 @@ export function useEmbedArtwork(albumId) {
  */
 export function useUploadArtwork(albumId) {
   const queryClient = useQueryClient();
+  const { activeLibrary } = useLibrary();
 
   return useMutation({
     mutationFn: (file) => uploadAlbumArtwork(albumId, file),
@@ -39,10 +42,10 @@ export function useUploadArtwork(albumId) {
       bustArtworkCache(albumId);
 
       // Invalidate album query to refetch album data
-      queryClient.invalidateQueries({ queryKey: ["album", albumId] });
+      queryClient.invalidateQueries({ queryKey: ["album", activeLibrary, albumId] });
 
       // Refetch the album immediately to show the new artwork
-      queryClient.refetchQueries({ queryKey: ["album", albumId] });
+      queryClient.refetchQueries({ queryKey: ["album", activeLibrary, albumId] });
     },
   });
 }

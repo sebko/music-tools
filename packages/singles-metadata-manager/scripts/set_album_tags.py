@@ -176,7 +176,7 @@ def _count_audio_folders(root_dir: Path, skip_set: set[str]) -> int:
     for dirpath, dirnames, filenames in os.walk(root_dir):
         dirpath = Path(dirpath)
         name = dirpath.name
-        if dirpath == root_dir or name.startswith('.'):
+        if dirpath != root_dir and name.startswith('.'):
             continue
         if name in skip_set:
             dirnames.clear()
@@ -201,8 +201,11 @@ def process_directory(root_dir: Path, dry_run: bool, skip_folders: list[str] | N
         dirpath = Path(dirpath)
         folder_name = dirpath.name
 
-        # Skip the root directory itself and hidden directories
-        if dirpath == root_dir or folder_name.startswith('.'):
+        # Skip hidden directories. The root itself IS processed: loose audio
+        # sitting directly in a flat legacy year folder (e.g. Singles/2015/)
+        # gets tagged with album "Singles - 2015" via parse_folder_name's
+        # fallback, same as any other folder.
+        if dirpath != root_dir and folder_name.startswith('.'):
             continue
 
         # Skip folders matching any skip pattern

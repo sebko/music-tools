@@ -16,7 +16,7 @@ import { prisma } from "../prisma/client.js";
  * @param {Object} details - Additional context (file path, API response, etc.)
  * @returns {Promise<Object>} Created failure record
  */
-export async function logSyncFailure(albumId, operation, error, details = null) {
+export async function logSyncFailure(albumId, operation, error, details = null, libraryName = "Music") {
   try {
     return await prisma.syncFailure.create({
       data: {
@@ -24,6 +24,7 @@ export async function logSyncFailure(albumId, operation, error, details = null) 
         operation,
         error: error.message || String(error),
         details: details ? JSON.stringify(details) : null,
+        libraryName,
       },
     });
   } catch (dbError) {
@@ -40,9 +41,11 @@ export async function logSyncFailure(albumId, operation, error, details = null) 
  * @param {number} limit - Maximum number of failures to return
  * @returns {Promise<Array>} Array of failure records with album info
  */
-export async function getRecentFailures(operation = null, limit = 50) {
+export async function getRecentFailures(operation = null, limit = 50, libraryName = "Music") {
+  const where = { libraryName };
+  if (operation) where.operation = operation;
   return prisma.syncFailure.findMany({
-    where: operation ? { operation } : {},
+    where,
     orderBy: { createdAt: "desc" },
     take: limit,
     include: {
@@ -63,10 +66,11 @@ export async function getRecentFailures(operation = null, limit = 50) {
  *
  * @returns {Promise<Object>} Counts by operation type
  */
-export async function getFailureCounts() {
+export async function getFailureCounts(libraryName = "Music") {
   const counts = await prisma.syncFailure.groupBy({
     by: ["operation"],
     _count: { id: true },
+    where: { libraryName },
   });
 
   return counts.reduce((acc, item) => {
@@ -81,9 +85,11 @@ export async function getFailureCounts() {
  * @param {string|null} operation - Operation type to clear, or null for all
  * @returns {Promise<Object>} Delete result with count
  */
-export async function clearFailures(operation = null) {
+export async function clearFailures(operation = null, libraryName = "Music") {
+  const where = { libraryName };
+  if (operation) where.operation = operation;
   return prisma.syncFailure.deleteMany({
-    where: operation ? { operation } : {},
+    where,
   });
 }
 

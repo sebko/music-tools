@@ -28,7 +28,6 @@ import {
   fetchDuplicateGroups,
   fetchLibraryFolders,
   deleteDuplicateTracks,
-  runBeetsPlugin,
   startLibraryFinalise,
   markSetupComplete,
 } from "../api/setup";
@@ -983,12 +982,34 @@ const PHASE_LABELS = {
   syncingFinal: "Final database sync",
 };
 
+const FINALISE_PHASES = [
+  { id: "checking", label: "Integrity check (beet bad)" },
+  { id: "setAlbumTags", label: "Album tags" },
+  { id: "scrubbing", label: "Tag scrub" },
+  { id: "normalizingGenres", label: "Genre normalisation" },
+  { id: "artwork", label: "Album art" },
+  { id: "ftintitle", label: '"feat." into title' },
+  { id: "replaygain", label: "Volume normalisation (ReplayGain)" },
+];
+
 function StepFinalise({ onNext }) {
   const [operationId, setOperationId] = useState(null);
   const [showLog, setShowLog] = useState(false);
+  const [selected, setSelected] = useState(
+    () => new Set(FINALISE_PHASES.map((p) => p.id)),
+  );
+
+  const togglePhase = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const startMutation = useMutation({
-    mutationFn: () => startLibraryFinalise(),
+    mutationFn: (phases) => startLibraryFinalise(phases),
     onSuccess: (data) => setOperationId(data.operationId),
   });
 
@@ -1018,8 +1039,26 @@ function StepFinalise({ onNext }) {
         </h2>
       </div>
       <p className="text-foreground/80">
-        Runs integrity check, album tags, tag scrub, genre normalisation, album art, feat-in-title, and volume normalisation (ReplayGain) across every track in your library.
+        Choose which tasks to run across every track in your library. Internal beets database syncs run automatically when their paired tasks are enabled.
       </p>
+
+      {!hasStarted && (
+        <div className="card-brutalist p-3 space-y-1">
+          {FINALISE_PHASES.map((phase) => (
+            <label
+              key={phase.id}
+              className="flex items-center gap-2 text-sm font-mono text-foreground/80 cursor-pointer hover:text-foreground"
+            >
+              <input
+                type="checkbox"
+                checked={selected.has(phase.id)}
+                onChange={() => togglePhase(phase.id)}
+              />
+              <span>{phase.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
 
       {(isRunning || isComplete) && total > 0 && (
         <div className="space-y-2">
@@ -1096,8 +1135,8 @@ function StepFinalise({ onNext }) {
             <Button
               variant="primary"
               size="md"
-              onClick={() => startMutation.mutate()}
-              isDisabled={startMutation.isPending}
+              onClick={() => startMutation.mutate(Array.from(selected))}
+              isDisabled={startMutation.isPending || selected.size === 0}
             >
               {startMutation.isPending ? (
                 <span className="flex items-center gap-2">

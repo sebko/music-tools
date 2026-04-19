@@ -5,7 +5,7 @@
  * in local audio files. Supports MP3 (ID3) and FLAC (Vorbis comments).
  */
 
-import NodeID3 from "node-id3";
+import NodeID3 from "node-id3tag";
 import { readdir, rename, stat, unlink } from "fs/promises";
 import { join, extname } from "path";
 import { exec, execFile } from "child_process";
@@ -82,7 +82,8 @@ function readGenresFromMP3(filePath) {
   try {
     const tags = NodeID3.read(filePath);
     if (!tags.genre) return [];
-    // Genre might be semicolon or comma-separated string
+    // node-id3tag returns an array for null-separated TCON, or a string for legacy
+    if (Array.isArray(tags.genre)) return tags.genre.filter(Boolean);
     return tags.genre
       .split(/[;,]/)
       .map((g) => g.trim())
@@ -280,9 +281,12 @@ function mapPlexMetadataToTags(plexAlbum, selectedFields, format, existingGenres
       if (format === "flac") {
         // FLAC: Pass as array - writeVorbisTagsFLAC handles multiple GENRE tags
         tags.GENRE = merged;
+      } else if (format === "m4a") {
+        // M4A: AtomicParsley expects a single string
+        tags.genre = merged.join("; ");
       } else {
-        // MP3 and M4A: Use genre field, semicolon-separated
-        tags.genre = merged.join(";");
+        // MP3: Pass as array - node-id3tag writes null-separated TCON (Pentaton compatible)
+        tags.genre = merged;
       }
     }
   }

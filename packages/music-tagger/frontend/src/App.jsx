@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@dj-tools/my-component-library";
 import { useHueRotation } from "./hooks/useHueRotation";
+import { LibraryProvider } from "./contexts/LibraryContext.jsx";
 import Layout from "./components/Layout";
 import AlbumsPage from "./pages/AlbumsPage";
 import AlbumDetailPage from "./pages/AlbumDetailPage";
@@ -15,11 +16,12 @@ import SettingsPage from "./pages/SettingsPage";
 
 function App() {
   // Start the quirky hue rotation animation
-  // useHueRotation();
+  useHueRotation();
 
   return (
     <ThemeProvider>
       <Router>
+        <LibraryProvider>
         <Layout>
           <Routes>
             <Route path="/" element={<AlbumsPage />} />
@@ -34,6 +36,7 @@ function App() {
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </Layout>
+        </LibraryProvider>
       </Router>
     </ThemeProvider>
   );

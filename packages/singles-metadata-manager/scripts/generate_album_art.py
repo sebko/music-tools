@@ -207,8 +207,10 @@ def process_directory(root_dir: Path, dry_run: bool, skip_folders: list[str] | N
         dirpath = Path(dirpath)
         folder_name = dirpath.name
 
-        # Skip root and hidden directories
-        if dirpath == root_dir or folder_name.startswith('.'):
+        # Skip hidden directories. The root itself IS processed so flat
+        # legacy year folders (e.g. Singles/2015/ with loose audio) get
+        # artwork labelled with the year via parse_folder_name's fallback.
+        if dirpath != root_dir and folder_name.startswith('.'):
             continue
 
         # Skip folders matching any skip pattern

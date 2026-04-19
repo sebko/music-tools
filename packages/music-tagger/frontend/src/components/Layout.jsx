@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { ThemeToggle, AppShell, NavLink } from "@dj-tools/my-component-library";
 import { Settings } from "lucide-react";
+import LibraryToggle from "./LibraryToggle";
 
 function Layout({ children }) {
   const location = useLocation();
@@ -36,7 +37,12 @@ function Layout({ children }) {
           </NavLink>
         </>
       }
-      actions={<ThemeToggle />}
+      actions={
+        <div className="flex items-center gap-2">
+          <LibraryToggle />
+          <ThemeToggle />
+        </div>
+      }
     >
       {children}
     </AppShell>

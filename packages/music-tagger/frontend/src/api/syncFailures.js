@@ -1,10 +1,4 @@
-/**
- * Sync Failures API
- *
- * Functions for fetching and managing sync operation failures.
- */
-
-const API_BASE = "http://localhost:3001";
+import { apiJson } from "./client.js";
 
 /**
  * Fetch recent sync failures
@@ -20,13 +14,7 @@ export async function fetchSyncFailures({ operation = null, limit = 50 } = {}) {
   if (limit) params.set("limit", limit.toString());
 
   const queryString = params.toString();
-  const url = `${API_BASE}/api/sync-failures${queryString ? `?${queryString}` : ""}`;
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error("Failed to fetch sync failures");
-  }
-  return response.json();
+  return apiJson(`/sync-failures${queryString ? `?${queryString}` : ""}`);
 }
 
 /**
@@ -35,11 +23,7 @@ export async function fetchSyncFailures({ operation = null, limit = 50 } = {}) {
  * @returns {Promise<Object>} Response with counts object
  */
 export async function fetchFailureCounts() {
-  const response = await fetch(`${API_BASE}/api/sync-failures/counts`);
-  if (!response.ok) {
-    throw new Error("Failed to fetch failure counts");
-  }
-  return response.json();
+  return apiJson("/sync-failures/counts");
 }
 
 /**
@@ -53,11 +37,5 @@ export async function clearSyncFailures(operation = null) {
   if (operation) params.set("operation", operation);
 
   const queryString = params.toString();
-  const url = `${API_BASE}/api/sync-failures${queryString ? `?${queryString}` : ""}`;
-
-  const response = await fetch(url, { method: "DELETE" });
-  if (!response.ok) {
-    throw new Error("Failed to clear sync failures");
-  }
-  return response.json();
+  return apiJson(`/sync-failures${queryString ? `?${queryString}` : ""}`, { method: "DELETE" });
 }

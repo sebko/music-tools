@@ -10,6 +10,7 @@ import {
   fetchFailureCounts,
   clearSyncFailures,
 } from "../api/syncFailures";
+import { useLibrary } from "./useLibrary";
 
 /**
  * Hook to fetch recent sync failures
@@ -19,8 +20,10 @@ import {
  * @returns {Object} TanStack Query result
  */
 export function useSyncFailures(operation = null, limit = 50) {
+  const { activeLibrary } = useLibrary();
+
   return useQuery({
-    queryKey: ["syncFailures", { operation, limit }],
+    queryKey: ["syncFailures", activeLibrary, { operation, limit }],
     queryFn: () => fetchSyncFailures({ operation, limit }),
     staleTime: 30 * 1000, // 30 seconds
   });
@@ -32,8 +35,10 @@ export function useSyncFailures(operation = null, limit = 50) {
  * @returns {Object} TanStack Query result
  */
 export function useFailureCounts() {
+  const { activeLibrary } = useLibrary();
+
   return useQuery({
-    queryKey: ["syncFailureCounts"],
+    queryKey: ["syncFailureCounts", activeLibrary],
     queryFn: fetchFailureCounts,
     staleTime: 30 * 1000, // 30 seconds
   });

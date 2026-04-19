@@ -720,7 +720,20 @@ app.post("/api/beets/library/process", async (req, res) => {
     }
 
     const { createOpHelpers } = await import("./services/beetsPipelineHelpers.js");
-    const { runProcessingPhases } = await import("./services/libraryProcessingPipeline.js");
+    const { runProcessingPhases, ALL_PHASES } = await import("./services/libraryProcessingPipeline.js");
+
+    let phases;
+    if (req.body && req.body.phases !== undefined) {
+      if (!Array.isArray(req.body.phases) || req.body.phases.length === 0) {
+        return res.status(400).json({ error: "phases must be a non-empty array" });
+      }
+      const allowed = new Set(ALL_PHASES);
+      const unknown = req.body.phases.filter((p) => !allowed.has(p));
+      if (unknown.length > 0) {
+        return res.status(400).json({ error: `Unknown phase(s): ${unknown.join(", ")}` });
+      }
+      phases = req.body.phases;
+    }
 
     const id = randomUUID();
     operations.set(id, {
@@ -735,7 +748,7 @@ app.post("/api/beets/library/process", async (req, res) => {
 
     (async () => {
       try {
-        await runProcessingPhases({ monthFolders, patch, appendOutput });
+        await runProcessingPhases({ monthFolders, patch, appendOutput, phases });
         patch({
           status: "completed",
           phase: "done",

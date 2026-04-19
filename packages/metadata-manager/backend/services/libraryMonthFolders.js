@@ -1,12 +1,19 @@
 import { readdir } from "fs/promises";
-import { join } from "path";
+import { join, extname } from "path";
 
 const YEAR_RE = /^\d{4}$/;
-const MONTH_RE = /^\d{4}-\d{2} [A-Z]/;
+const AUDIO_EXTS = new Set([".mp3", ".flac"]);
 
 /**
- * Walk a library root and return absolute paths for every month folder
- * matching the YYYY/YYYY-MM MonthName layout.
+ * Walk a library root and return absolute paths for every folder that the
+ * processing pipeline should target.
+ *
+ * Handles two layouts:
+ *   - YYYY/YYYY-MM MonthName/   (standard month subfolders)
+ *   - YYYY/                     (flat year folder with audio files directly inside)
+ *
+ * When a year folder contains both month subfolders AND loose audio files,
+ * the year folder itself is included so those loose files get processed too.
  */
 export async function enumerateMonthFolders(libraryPath) {
   const folders = [];
@@ -19,15 +26,33 @@ export async function enumerateMonthFolders(libraryPath) {
   for (const y of years) {
     if (!y.isDirectory() || !YEAR_RE.test(y.name)) continue;
     const yearPath = join(libraryPath, y.name);
-    let months;
+    let entries;
     try {
-      months = await readdir(yearPath, { withFileTypes: true });
+      entries = await readdir(yearPath, { withFileTypes: true });
     } catch {
       continue;
     }
-    for (const m of months) {
-      if (!m.isDirectory() || !MONTH_RE.test(m.name)) continue;
-      folders.push(join(yearPath, m.name));
+
+    const subfolders = [];
+    let hasLooseAudio = false;
+
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith(".")) {
+        subfolders.push(join(yearPath, entry.name));
+      } else if (entry.isFile() && AUDIO_EXTS.has(extname(entry.name).toLowerCase())) {
+        hasLooseAudio = true;
+      }
+    }
+
+    // When a year has loose audio, return only the year folder so each
+    // downstream beets phase runs once recursively (path:YYYY matches
+    // everything underneath), avoiding double-processing files in any
+    // subfolders. When a year has no loose audio, return its subfolders
+    // individually so per-month progress still appears in the UI.
+    if (hasLooseAudio) {
+      folders.push(yearPath);
+    } else {
+      folders.push(...subfolders);
     }
   }
   return folders.sort();

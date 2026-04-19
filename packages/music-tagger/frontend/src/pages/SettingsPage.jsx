@@ -28,7 +28,7 @@ function SettingsPage() {
 
   // Server/library selection
   const [selectedServer, setSelectedServer] = useState("");
-  const [selectedLibrary, setSelectedLibrary] = useState("");
+  const [selectedLibraries, setSelectedLibraries] = useState(new Set());
 
   // Fetch libraries once a server is selected after OAuth approval
   const { data: librariesData, isLoading: librariesLoading } = usePlexLibraries(
@@ -100,17 +100,30 @@ function SettingsPage() {
         setPollStatus("idle");
         setAvailableServers([]);
         setSelectedServer("");
-        setSelectedLibrary("");
+        setSelectedLibraries(new Set());
       },
     });
   };
 
+  const toggleLibrary = (title) => {
+    setSelectedLibraries((prev) => {
+      const next = new Set(prev);
+      if (next.has(title)) {
+        next.delete(title);
+      } else {
+        next.add(title);
+      }
+      return next;
+    });
+  };
+
   const handleSave = () => {
+    const libs = Array.from(selectedLibraries);
     saveMutation.mutate(
-      { serverName: selectedServer, libraryName: selectedLibrary },
+      { serverName: selectedServer, libraryName: libs[0], availableLibraries: libs },
       {
         onSuccess: () => {
-          navigate("/?scan=true");
+          navigate(`/?library=${encodeURIComponent(libs[0])}&scan=all`);
         },
       }
     );
@@ -219,7 +232,7 @@ function SettingsPage() {
               value={selectedServer}
               onChange={(e) => {
                 setSelectedServer(e.target.value);
-                setSelectedLibrary("");
+                setSelectedLibraries(new Set());
               }}
               className={cn(
                 "w-full px-3 py-2 bg-background border-2 border-border rounded-base",
@@ -236,11 +249,11 @@ function SettingsPage() {
           </div>
         )}
 
-        {/* Step 3: Library selector */}
+        {/* Step 3: Library selector (checkboxes) */}
         {isApproved && selectedServer && (
           <div className="mb-6">
             <label className="block text-sm font-heading text-foreground mb-1">
-              Music Library
+              Music Libraries
             </label>
             {librariesLoading ? (
               <div className="flex items-center gap-2 text-sm text-foreground/60">
@@ -248,27 +261,33 @@ function SettingsPage() {
                 Loading libraries…
               </div>
             ) : (
-              <select
-                value={selectedLibrary}
-                onChange={(e) => setSelectedLibrary(e.target.value)}
-                className={cn(
-                  "w-full px-3 py-2 bg-background border-2 border-border rounded-base",
-                  "text-foreground focus:outline-none focus:border-main"
-                )}
-              >
-                <option value="">Select a library…</option>
+              <div className="space-y-2">
                 {availableLibraries.map((lib) => (
-                  <option key={lib.key} value={lib.title}>
-                    {lib.title}
-                  </option>
+                  <label
+                    key={lib.key}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2 rounded-base border-2 cursor-pointer transition-colors",
+                      selectedLibraries.has(lib.title)
+                        ? "border-main bg-main/10"
+                        : "border-border bg-background hover:border-foreground/30"
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedLibraries.has(lib.title)}
+                      onChange={() => toggleLibrary(lib.title)}
+                      className="accent-main w-4 h-4"
+                    />
+                    <span className="text-foreground font-heading text-sm">{lib.title}</span>
+                  </label>
                 ))}
-              </select>
+              </div>
             )}
           </div>
         )}
 
         {/* Save button */}
-        {isApproved && selectedServer && selectedLibrary && (
+        {isApproved && selectedServer && selectedLibraries.size > 0 && (
           <div className="flex items-center gap-4 pt-2 border-t-2 border-border">
             <Button
               onClick={handleSave}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { useStartLibraryScan, useStopLibraryScan } from './useLibraryScan';
-import { fetchScanProgress } from '../api/library';
+import { fetchScanProgress, startScanAll } from '../api/library';
 
 export function useLibraryScanManager() {
   const [showScanModal, setShowScanModal] = useState(false);
@@ -41,6 +41,22 @@ export function useLibraryScanManager() {
     }
   };
 
+  const handleStartScanAll = async () => {
+    try {
+      await startScanAll();
+      queryClient.removeQueries({ queryKey: ['scanProgress'] });
+      setShowScanModal(true);
+    } catch (error) {
+      console.error("Error starting scan-all:", error);
+      const isAlreadyRunning = error.message?.includes('Scan already in progress');
+      if (isAlreadyRunning) {
+        setShowScanModal(true);
+      } else {
+        alert("Failed to start library scan: " + error.message);
+      }
+    }
+  };
+
   const handleScanComplete = () => {
     setShowScanModal(false);
     // Invalidate albums query to refresh the list
@@ -57,6 +73,7 @@ export function useLibraryScanManager() {
 
     // Handlers
     handleStartScan,
+    handleStartScanAll,
     handleScanComplete,
     handleCloseScanModal,
 

@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import fs from "fs/promises";
 import { prisma } from "../prisma/client.js";
-import { getPlexAlbums, getAlbumLocation, getPlexAlbum, getPlexAlbumArtworkUrls } from "./plexClient.js";
+import { getPlexAlbums, getAlbumLocation, getPlexAlbum, getPlexAlbumArtworkUrls, getMusicSectionByName } from "./plexClient.js";
 import { recordMetadataMatch } from "./enhancementLayer.js";
 import { getImageDimensions } from "./imageDimensions.js";
 
@@ -51,8 +51,8 @@ function resetScanState() {
  * @param {string} filePath - Album directory path
  * @returns {string} SHA256 hash
  */
-export function hashFilePath(filePath) {
-  return crypto.createHash("sha256").update(filePath).digest("hex");
+export function hashFilePath(filePath, libraryName = "Music") {
+  return crypto.createHash("sha256").update(`${filePath}\0${libraryName}`).digest("hex");
 }
 
 /**
@@ -151,12 +151,11 @@ export async function upsertServiceRelease(serviceName, externalId) {
 /**
  * Wipe all enhancement layer tables
  */
-export async function wipeEnhancementTables() {
-  console.log("Wiping enhancement layer tables...");
+export async function wipeEnhancementTables(libraryName) {
+  console.log(`Wiping enhancement layer tables for library: ${libraryName}...`);
 
-  // Delete in order (children first due to foreign keys)
-  await prisma.albumMetadataServiceMatch.deleteMany();
-  await prisma.album.deleteMany();
+  // Delete scoped records for this library (cascades to related tables)
+  await prisma.album.deleteMany({ where: { libraryName } });
   await prisma.metadataService.deleteMany();
 
   // Drop dynamically created service tables
@@ -179,18 +178,22 @@ export async function wipeEnhancementTables() {
  * Scan Plex library and populate enhancement layer
  * @returns {Promise<{ albumsScanned: number, servicesDiscovered: number }>}
  */
-export async function scanPlexLibrary() {
+export async function scanPlexLibrary(libraryName = "Music") {
   try {
     // Reset and initialize scan state
     resetScanState();
     scanState.isScanning = true;
 
-    console.log("Starting Plex library scan...");
+    console.log(`Starting Plex library scan for "${libraryName}"...`);
 
-    // Step 1: Wipe existing data
-    await wipeEnhancementTables();
+    // Step 1: Wipe existing data for this library
+    await wipeEnhancementTables(libraryName);
 
-    // Step 2: Fetch all albums from Plex
+    // Step 2: Connect to the specific Plex library section
+    console.log(`Connecting to Plex library section "${libraryName}"...`);
+    const section = await getMusicSectionByName(libraryName);
+
+    // Step 3: Fetch all albums from Plex
     console.log("Fetching albums from Plex...");
     let allAlbums = [];
     let page = 1;
@@ -198,7 +201,7 @@ export async function scanPlexLibrary() {
     let hasMore = true;
 
     while (hasMore && !scanState.shouldStop) {
-      const result = await getPlexAlbums({ page, limit });
+      const result = await getPlexAlbums({ page, limit, sectionOverride: section });
       allAlbums = allAlbums.concat(result.albums);
 
       console.log(
@@ -263,7 +266,7 @@ export async function scanPlexLibrary() {
         }
 
         // Generate stable ID
-        const albumId = hashFilePath(location);
+        const albumId = hashFilePath(location, libraryName);
 
         // Parse GUIDs to extract metadata services
         const metadataServices = parseGUIDs(fullAlbum.guids || []);
@@ -296,6 +299,7 @@ export async function scanPlexLibrary() {
             titleSort,
             genre,
             folderCreatedAt,
+            libraryName,
           },
         });
 
@@ -323,7 +327,7 @@ export async function scanPlexLibrary() {
           discoveredServices.add(service);
 
           // Use recordMetadataMatch to ensure matchStatus is updated
-          await recordMetadataMatch(plexAlbum.id, service, externalId);
+          await recordMetadataMatch(plexAlbum.id, service, externalId, libraryName);
 
           // Ensure service release table exists
           await ensureServiceReleaseTable(service);

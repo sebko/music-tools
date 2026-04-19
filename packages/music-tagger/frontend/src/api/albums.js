@@ -1,4 +1,4 @@
-const API_BASE = "/api";
+import { API_BASE, apiJson } from "./client.js";
 
 export async function fetchAlbums({
   page = 1,
@@ -45,102 +45,63 @@ export async function fetchAlbums({
     params.append("syncCompleteness", syncCompleteness);
   }
 
-  const response = await fetch(`${API_BASE}/albums?${params}`);
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => null);
-    const errorMessage = errorBody?.error || response.statusText;
-    const error = new Error(`Failed to fetch albums: ${errorMessage}`);
-    if (errorBody?.requiresSetup) {
+  try {
+    return await apiJson(`/albums?${params}`);
+  } catch (error) {
+    // Preserve requiresSetup flag if present
+    if (error.message.includes("requires setup")) {
       error.requiresSetup = true;
     }
     throw error;
   }
-
-  return response.json();
 }
 
 export async function fetchAlbum(id) {
-  const response = await fetch(`${API_BASE}/albums/${id}`);
-
-  if (!response.ok) {
-    if (response.status === 404) {
-      throw new Error("Album not found");
-    }
-    throw new Error(`Failed to fetch album: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.album; // Extract the album from the response wrapper
+  const data = await apiJson(`/albums/${id}`);
+  return data.album;
 }
 
 export async function refreshAlbum(id) {
-  const response = await fetch(`${API_BASE}/albums/${id}/refresh`, {
+  return apiJson(`/albums/${id}/refresh`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(
-      errorData.error || `Failed to refresh album: ${response.statusText}`
-    );
-  }
-
-  return response.json();
 }
 
 // Global cache buster store - gets updated when artwork changes
 const artworkCacheBusters = new Map();
 
 export function getAlbumArtworkUrl(id) {
-  // Use cache buster if available, otherwise use current timestamp
   const cacheBuster = artworkCacheBusters.get(id) || Date.now();
   return `${API_BASE}/albums/${id}/artwork?v=${cacheBuster}`;
 }
 
 export function bustArtworkCache(id) {
-  // Update the cache buster for this album
   artworkCacheBusters.set(id, Date.now());
 }
 
 export async function embedAlbumArtwork(id, artworkUrl) {
-  const response = await fetch(`${API_BASE}/albums/${id}/artwork/embed`, {
+  return apiJson(`/albums/${id}/artwork/embed`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ artworkUrl }),
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(
-      errorData.error || `Failed to embed artwork: ${response.statusText}`
-    );
-  }
-
-  return response.json();
 }
 
 export async function uploadAlbumArtwork(id, file) {
   const formData = new FormData();
   formData.append("artwork", file);
 
-  const response = await fetch(`${API_BASE}/albums/${id}/artwork/upload`, {
+  // Can't use apiJson for FormData — browser sets Content-Type with boundary
+  const resp = await fetch(`${API_BASE}/albums/${id}/artwork/upload`, {
     method: "POST",
     body: formData,
-    // Don't set Content-Type header - browser will set it with boundary
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
+  if (!resp.ok) {
+    const errorData = await resp.json().catch(() => ({}));
     throw new Error(
-      errorData.error || `Failed to upload artwork: ${response.statusText}`
+      errorData.error || `Failed to upload artwork: ${resp.statusText}`
     );
   }
-
-  return response.json();
+  return resp.json();
 }

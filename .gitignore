@@ -93,6 +93,17 @@ temp/
 # Claude Code local settings
 .claude/settings.local.json
 
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# npm lockfiles (this repo uses pnpm)
+package-lock.json
+
+# Backup/snapshot files
+*-snapshot-*.tsv
+
 # OS generated files
 .DS_Store
 .DS_Store?

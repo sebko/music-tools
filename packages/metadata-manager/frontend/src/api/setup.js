@@ -80,9 +80,13 @@ export async function runBeetsPlugin(plugin) {
   );
 }
 
-export async function startLibraryFinalise() {
+export async function startLibraryFinalise(phases) {
   return handle(
-    await fetch(`${API_BASE}/beets/library/process`, { method: "POST" })
+    await fetch(`${API_BASE}/beets/library/process`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phases }),
+    })
   );
 }
 

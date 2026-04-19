@@ -5,7 +5,7 @@
  * Supports MP3 (ID3), FLAC (Vorbis comments), and other formats.
  */
 
-import NodeID3 from "node-id3";
+import NodeID3 from "node-id3tag";
 import { readdir } from "fs/promises";
 import { join } from "path";
 import { writeFile } from "fs/promises";
@@ -157,9 +157,9 @@ function mapMetadataToID3Tags(metadata) {
     tags.year = metadata.year.toString();
   }
 
-  // Genre (convert tags array to semicolon-separated string) - only if explicitly provided
+  // Genre (pass as array for null-separated TCON, Pentaton compatible) - only if explicitly provided
   if (metadata.tags !== undefined && Array.isArray(metadata.tags) && metadata.tags.length > 0) {
-    tags.genre = metadata.tags.join(";");
+    tags.genre = metadata.tags;
   }
 
   // Label (Publisher) - only if explicitly provided

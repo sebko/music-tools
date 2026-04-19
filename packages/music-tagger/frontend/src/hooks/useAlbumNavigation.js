@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchAlbums } from '../api/albums';
+import { useLibrary } from './useLibrary';
 
 /**
  * Hook for navigating between matched albums on the sync page
@@ -16,11 +17,12 @@ export function useAlbumNavigation(currentAlbumId, options = {}) {
     sortBy = 'addedAt',
     sortOrder = 'desc',
   } = options;
+  const { activeLibrary } = useLibrary();
 
   // Fetch all matched and synced albums for navigation
   // Using a high limit to get all albums with Redacted matches in one request
   const { data, isLoading } = useQuery({
-    queryKey: ['albums', 'navigation', 'matchedOrSynced', sortBy, sortOrder],
+    queryKey: ['albums', 'navigation', activeLibrary, 'matchedOrSynced', sortBy, sortOrder],
     queryFn: () => fetchAlbums({
       page: 1,
       limit: 5000, // Fetch up to 5000 albums

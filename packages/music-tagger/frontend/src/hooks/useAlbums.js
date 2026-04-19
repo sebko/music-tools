@@ -1,9 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchAlbums } from '../api/albums';
+import { useLibrary } from './useLibrary';
 
 export function useAlbums(page = 1, limit = 50, sortBy = 'dateCreated', sortOrder = 'desc', search = '', filter = '', fileSyncStatus = '', artworkQuality = '', syncCompleteness = '') {
+  const { activeLibrary } = useLibrary();
+
   return useQuery({
-    queryKey: ['albums', { page, limit, sortBy, sortOrder, search, filter, fileSyncStatus, artworkQuality, syncCompleteness }],
+    queryKey: ['albums', activeLibrary, { page, limit, sortBy, sortOrder, search, filter, fileSyncStatus, artworkQuality, syncCompleteness }],
     queryFn: () => fetchAlbums({ page, limit, sortBy, sortOrder, search, filter, fileSyncStatus, artworkQuality, syncCompleteness }),
     keepPreviousData: true, // Keep showing previous page data while fetching new page
     staleTime: 30000, // Consider data fresh for 30 seconds to reduce re-fetching
