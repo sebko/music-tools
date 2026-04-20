@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -16,12 +16,21 @@ import {
   Loader,
   FolderOpen,
 } from "lucide-react";
-import { fetchInboxStatus, runInboxImport, resumeInboxImport } from "../api/inbox";
+import {
+  fetchInboxStatus,
+  runInboxImport,
+  resumeInboxImport,
+  resumeInboxImportAfterDuplicateReview,
+} from "../api/inbox";
 import { useOperationPolling } from "../hooks/useOperationPolling";
 import EnrichmentCard from "../components/EnrichmentCard";
+import DuplicateReviewCard from "../components/DuplicateReviewCard";
 
 const PHASE_LABELS = {
   validating: "Validating inbox tags",
+  "checking-duplicates": "Checking for duplicates in library",
+  "awaiting-duplicate-review": "Review duplicates",
+  "removing-duplicates": "Removing replaced library tracks",
   converting: "Converting audio formats",
   importing: "Importing files with beets",
   checking: "Checking file integrity",
@@ -36,10 +45,24 @@ const PHASE_LABELS = {
   done: "Complete",
 };
 
+function defaultDecisions(duplicateMatches) {
+  const out = {};
+  for (const dup of duplicateMatches || []) {
+    const bestLib = Math.max(...dup.matches.map((m) => m.bitrate || 0));
+    const action = (dup.bitrate || 0) > bestLib ? "replace" : "skip_delete";
+    out[dup.file] = {
+      action,
+      replaceIds: action === "replace" ? dup.matches.map((m) => m.id) : undefined,
+    };
+  }
+  return out;
+}
+
 function InboxPage() {
   const queryClient = useQueryClient();
   const [operationId, setOperationId] = useState(null);
   const [showLog, setShowLog] = useState(false);
+  const [duplicateDecisions, setDuplicateDecisions] = useState({});
 
   const { data: inbox, isLoading } = useQuery({
     queryKey: ["inbox-status"],
@@ -57,9 +80,27 @@ function InboxPage() {
   const status = operation?.status;
   const hasStarted = !!operationId || startMutation.isPending;
   const isAwaitingReview = status === "awaiting_review";
+  const isAwaitingDuplicateReview = status === "awaiting_duplicate_review";
   const isRunning = status === "running" || (hasStarted && !operation);
   const isComplete = status === "completed";
   const isFailed = status === "failed" || startMutation.isError;
+  const isPaused = isAwaitingReview || isAwaitingDuplicateReview;
+
+  // Initialise per-file decisions when the operation enters duplicate-review.
+  // Re-init only when the underlying duplicate set changes — re-renders
+  // mid-review must not blow away in-progress user choices.
+  useEffect(() => {
+    if (isAwaitingDuplicateReview && operation?.duplicateMatches) {
+      setDuplicateDecisions((prev) =>
+        Object.keys(prev).length === 0
+          ? defaultDecisions(operation.duplicateMatches)
+          : prev,
+      );
+    }
+    if (!isAwaitingDuplicateReview && Object.keys(duplicateDecisions).length > 0) {
+      setDuplicateDecisions({});
+    }
+  }, [isAwaitingDuplicateReview, operation?.duplicateMatches]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resumeMutation = useMutation({
     mutationFn: () => resumeInboxImport(operationId),
@@ -67,6 +108,22 @@ function InboxPage() {
       queryClient.invalidateQueries({ queryKey: ["operation", operationId] });
     },
   });
+
+  const resumeDupMutation = useMutation({
+    mutationFn: () =>
+      resumeInboxImportAfterDuplicateReview(operationId, duplicateDecisions),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["operation", operationId] });
+    },
+  });
+
+  const handleDecisionChange = (filePath, decision) => {
+    setDuplicateDecisions((prev) => ({ ...prev, [filePath]: decision }));
+  };
+
+  const allReplaceDecisionsValid = Object.values(duplicateDecisions).every((d) =>
+    d.action === "replace" ? Array.isArray(d.replaceIds) && d.replaceIds.length > 0 : true,
+  );
 
   if (isComplete && operationId) {
     // One-shot refresh when the pipeline finishes so the UI reflects the new
@@ -87,7 +144,10 @@ function InboxPage() {
 
   const handleReset = () => {
     setOperationId(null);
+    setDuplicateDecisions({});
     startMutation.reset();
+    resumeMutation.reset();
+    resumeDupMutation.reset();
   };
 
   if (isLoading) {
@@ -136,7 +196,7 @@ function InboxPage() {
             <Check className="w-6 h-6 text-green-600 dark:text-green-400" />
           ) : isFailed ? (
             <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
-          ) : isAwaitingReview ? (
+          ) : isPaused ? (
             <Check className="w-6 h-6 text-amber-500" />
           ) : (
             <Loader className="w-6 h-6 animate-spin text-main" />
@@ -149,6 +209,49 @@ function InboxPage() {
                 : phaseLabel}
           </h2>
         </div>
+
+        {isAwaitingDuplicateReview && (
+          <div className="space-y-4">
+            <p className="text-sm text-foreground/70">
+              {(operation?.duplicateMatches?.length || 0)} inbox file
+              {(operation?.duplicateMatches?.length || 0) === 1 ? "" : "s"} already
+              appear in the library. Pick an action for each. The recommended
+              action (★) is based on bitrate.
+            </p>
+            <div className="space-y-4">
+              {(operation?.duplicateMatches || []).map((dup) => (
+                <DuplicateReviewCard
+                  key={dup.file}
+                  duplicate={dup}
+                  decision={duplicateDecisions[dup.file]}
+                  onChange={handleDecisionChange}
+                  inboxPath={operation?.inboxPath || inboxPath || ""}
+                />
+              ))}
+            </div>
+            {resumeDupMutation.isError && (
+              <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
+                <AlertCircle className="w-3 h-3 shrink-0" />
+                {resumeDupMutation.error?.message}
+              </div>
+            )}
+            <div className="flex justify-end pt-2">
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => resumeDupMutation.mutate()}
+                disabled={resumeDupMutation.isPending || !allReplaceDecisionsValid}
+              >
+                {resumeDupMutation.isPending ? (
+                  <Loader className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                Continue import
+              </Button>
+            </div>
+          </div>
+        )}
 
         {isAwaitingReview && (
           <div className="space-y-4">

@@ -13,7 +13,11 @@ import { setBeetsLibraryDirectory } from "./services/beetsConfig.js";
 import { resetBeetsLibraryDb } from "./services/beetsLibrary.js";
 import { listUnprocessedFiles } from "./services/unprocessedFiles.js";
 import { parseDuplicatesOutput } from "./services/duplicatesParser.js";
-import { runInboxImport, resumeInboxImport } from "./services/inboxImportRunner.js";
+import {
+  runInboxImport,
+  resumeInboxImport,
+  resumeInboxImportAfterDuplicateReview,
+} from "./services/inboxImportRunner.js";
 import { enrichTracks, getCachedEnrichments, applyEnrichment } from "./services/trackEnrichmentService.js";
 import { checkGenreFormat } from "./services/genreFormatChecker.js";
 
@@ -854,6 +858,53 @@ app.post("/api/inbox/import/:id/resume", (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     console.error("Error resuming inbox import:", error);
+    res.status(500).json({ error: error.message || "Failed to resume import" });
+  }
+});
+
+// Resume an inbox import paused at the pre-conversion duplicate review step.
+// Body: { decisions: { [filePath]: { action, replaceIds? } } } where action
+// is one of "skip_keep" | "skip_delete" | "replace" | "import_anyway".
+// Closes the readonly DB handle so beets can take its write lock for any
+// `beet rm` calls triggered by `replace` decisions.
+app.post("/api/inbox/import/:id/resume-duplicates", (req, res) => {
+  const op = operations.get(req.params.id);
+  if (!op) return res.status(404).json({ error: "Operation not found" });
+  if (op.status !== "awaiting_duplicate_review") {
+    return res.status(400).json({
+      error: `Operation is not awaiting duplicate review (status=${op.status})`,
+    });
+  }
+  const { decisions } = req.body || {};
+  if (!decisions || typeof decisions !== "object") {
+    return res.status(400).json({ error: "decisions object is required" });
+  }
+  const validActions = new Set(["skip_keep", "skip_delete", "replace", "import_anyway"]);
+  for (const [filePath, decision] of Object.entries(decisions)) {
+    if (!decision || !validActions.has(decision.action)) {
+      return res.status(400).json({
+        error: `Invalid action for ${filePath}: ${decision?.action}`,
+      });
+    }
+    if (decision.action === "replace") {
+      if (!Array.isArray(decision.replaceIds) || decision.replaceIds.length === 0) {
+        return res.status(400).json({
+          error: `replace action for ${filePath} requires replaceIds[]`,
+        });
+      }
+      if (!decision.replaceIds.every((n) => Number.isInteger(n) && n > 0)) {
+        return res.status(400).json({
+          error: `replaceIds for ${filePath} must be positive integers`,
+        });
+      }
+    }
+  }
+  try {
+    closeDb();
+    resumeInboxImportAfterDuplicateReview(operations, req.params.id, decisions);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("Error resuming inbox import (duplicates):", error);
     res.status(500).json({ error: error.message || "Failed to resume import" });
   }
 });
