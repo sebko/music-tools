@@ -51,7 +51,18 @@ export async function normalizeGenresInFolders(monthFolders, { onFile } = {}) {
         .map((g) => g.trim())
         .filter(Boolean);
 
-      await writeGenres(filePath, split);
+      // Dedupe case-insensitively, preserving first-seen casing/order so
+      // the user's preferred capitalisation wins over later duplicates.
+      const seen = new Set();
+      const deduped = [];
+      for (const g of split) {
+        const key = g.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(g);
+      }
+
+      await writeGenres(filePath, deduped);
       normalized += 1;
       onFile?.({ filePath, action: "normalized" });
     }

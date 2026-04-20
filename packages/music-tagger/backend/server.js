@@ -28,7 +28,6 @@ import {
 import { scanPlexLibrary, getScanProgress, stopScan } from "./services/libraryScanner.js";
 import { getAlbumMetadataMatches, recordMetadataMatch } from "./services/enhancementLayer.js";
 import { readAlbumMetadataFromFiles, getEmbeddedArtwork } from "./services/fileMetadataReader.js";
-import { writeFileTagsToAlbum } from "./services/fileTagWriter.js";
 import { writePlexMetadata } from "./services/plexMetadataWriter.js";
 import { REDACTED } from "./constants/metadataServices.js";
 import { fetchImage, embedArtworkToAlbum } from "./services/artwork/artworkManager.js";
@@ -1229,25 +1228,15 @@ app.post("/api/albums/:id/metadata/match", async (req, res) => {
   }
 });
 
-// Apply metadata to album (ID3 tags and/or Plex)
+// Apply metadata to Plex
 app.post("/api/albums/:id/metadata/apply", async (req, res) => {
   try {
     const albumId = req.params.id;
-    const { applyToFileTags, applyToPlex, metadata } = req.body;
+    const { metadata } = req.body;
 
     console.log(`\n=== Apply Metadata Request ===`);
     console.log(`Album ID: ${albumId}`);
-    console.log(`Apply to file tags: ${applyToFileTags}`);
-    console.log(`Apply to Plex: ${applyToPlex}`);
-    console.log(`Metadata: ${metadata.artist} - ${metadata.title} (${metadata.year})`);
-
-    // Validate inputs
-    if (!applyToFileTags && !applyToPlex) {
-      return res.status(400).json({
-        success: false,
-        error: "Must select at least one target (file tags or Plex)",
-      });
-    }
+    console.log(`Metadata: ${metadata?.artist} - ${metadata?.title} (${metadata?.year})`);
 
     if (!metadata) {
       return res.status(400).json({
@@ -1266,62 +1255,34 @@ app.post("/api/albums/:id/metadata/apply", async (req, res) => {
       });
     }
 
-    // Results object to track both operations
-    const results = {
-      fileTags: null,
-      plex: null,
-    };
+    const results = { plex: null };
 
-    // Apply to file tags if requested
-    if (applyToFileTags) {
-      if (!album.location) {
-        results.fileTags = {
-          success: false,
-          error: "Album location not available - cannot write file tags",
-        };
-      } else {
-        try {
-          results.fileTags = await writeFileTagsToAlbum(album.location, metadata);
-        } catch (error) {
-          results.fileTags = {
-            success: false,
-            error: error.message,
-          };
-        }
-      }
+    try {
+      // Build selectedFields from metadata to track which fields were synced
+      const selectedFields = {
+        title: metadata.title !== undefined,
+        artist: metadata.artist !== undefined,
+        year: metadata.year !== undefined,
+        tags: metadata.tags !== undefined,
+        label: metadata.label !== undefined,
+        artwork: metadata.coverUrl !== undefined,
+      };
+
+      // Use shared sync service which handles Plex write + DB status update
+      const syncResult = await syncAlbumToPlex(albumId, metadata, { selectedFields, libraryName: req.activeLibrary });
+      results.plex = {
+        success: syncResult.success,
+        message: syncResult.message,
+        fieldsUpdated: syncResult.fieldsUpdated,
+        error: syncResult.error,
+      };
+    } catch (error) {
+      results.plex = {
+        success: false,
+        error: error.message,
+      };
     }
 
-    // Apply to Plex if requested - uses shared syncAlbumToPlex service
-    if (applyToPlex) {
-      try {
-        // Build selectedFields from metadata to track which fields were synced
-        const selectedFields = {
-          title: metadata.title !== undefined,
-          artist: metadata.artist !== undefined,
-          year: metadata.year !== undefined,
-          tags: metadata.tags !== undefined,
-          label: metadata.label !== undefined,
-          artwork: metadata.coverUrl !== undefined,
-        };
-
-        // Use shared sync service which handles Plex write + DB status update
-        const syncResult = await syncAlbumToPlex(albumId, metadata, { selectedFields, libraryName: req.activeLibrary });
-        results.plex = {
-          success: syncResult.success,
-          message: syncResult.message,
-          fieldsUpdated: syncResult.fieldsUpdated,
-          error: syncResult.error,
-        };
-      } catch (error) {
-        results.plex = {
-          success: false,
-          error: error.message,
-        };
-      }
-    }
-
-    // Determine overall success
-    // Since applyToFileTags is always false, only check Plex status
     const plexSuccess = results.plex && results.plex.success;
 
     // Build response message

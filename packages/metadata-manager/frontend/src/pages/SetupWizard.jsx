@@ -57,7 +57,7 @@ function SetupWizard() {
 
   const finish = async () => {
     await markSetupComplete();
-    queryClient.invalidateQueries({ queryKey: ["setupStatus"] });
+    await queryClient.refetchQueries({ queryKey: ["setupStatus"] });
     queryClient.invalidateQueries({ queryKey: ["albums"] });
     navigate("/");
   };

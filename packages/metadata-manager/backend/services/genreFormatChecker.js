@@ -24,18 +24,14 @@ export async function checkGenreFormat(filePath) {
     return { genres: [], correctlyFormatted: true, hasGenres: false };
   }
 
-  // Multiple entries → music-metadata parsed multi-value tags correctly
-  if (genres.length > 1) {
-    return { genres, correctlyFormatted: true, hasGenres: true };
+  // Any entry containing a comma or semicolon is a joined string and the
+  // file needs re-encoding — even if there are multiple entries already
+  // (a half-normalised file like ['House;Deep House', 'Trip Hop'] still
+  // collapses incorrectly in Pentaton).
+  const hasJoinedEntry = genres.some((g) => g.includes(",") || g.includes(";"));
+  if (hasJoinedEntry) {
+    return { genres, correctlyFormatted: false, hasGenres: true };
   }
 
-  // Single entry with no comma/semicolon → legitimate single genre
-  const single = genres[0];
-  if (!single.includes(",") && !single.includes(";")) {
-    return { genres, correctlyFormatted: true, hasGenres: true };
-  }
-
-  // Single entry containing comma or semicolon → joined string instead of
-  // proper multi-value encoding
-  return { genres, correctlyFormatted: false, hasGenres: true };
+  return { genres, correctlyFormatted: true, hasGenres: true };
 }

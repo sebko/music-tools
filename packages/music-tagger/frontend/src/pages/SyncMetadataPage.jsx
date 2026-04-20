@@ -710,8 +710,6 @@ function SyncMetadataPage() {
                 body: JSON.stringify({
                   service: 'redacted',
                   groupId,
-                  applyToFileTags: false, // ONLY update Plex, not file tags
-                  applyToPlex: true,
                   metadata: diff
                 })
               });

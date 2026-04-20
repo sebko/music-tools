@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAlbum } from "../hooks/useAlbum";
 import { Button, cn, EmptyState } from "@dj-tools/my-component-library";
 import Lightbox from "../components/Lightbox";
@@ -62,6 +62,8 @@ function calculateMetadataDiff(localAlbum, redactedData) {
 
 function MatchMetadataPage() {
   const { id, groupId } = useParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { data: localAlbum, isLoading: localLoading } = useAlbum(id);
 
   const [redactedData, setRedactedData] = useState(null);
@@ -371,7 +373,10 @@ function MatchMetadataPage() {
 
                 // Redirect to matched tab after 2 seconds
                 setTimeout(() => {
-                  window.location.href = `/?filter=matched`;
+                  const library = searchParams.get("library");
+                  const params = new URLSearchParams({ filter: "matched" });
+                  if (library) params.set("library", library);
+                  navigate(`/?${params.toString()}`);
                 }, 2000);
               } else {
                 // Failure
