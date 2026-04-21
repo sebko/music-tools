@@ -647,7 +647,7 @@ app.get("/api/beets/unprocessed", async (req, res) => {
     res.json({ files });
   } catch (error) {
     console.error("Error listing unprocessed files:", error);
-    res.status(500).json({ error: "Failed to list unprocessed files" });
+    res.status(500).json({ error: "Failed to list unprocessed files", detail: error.message });
   }
 });
 

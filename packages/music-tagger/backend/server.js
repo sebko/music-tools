@@ -97,6 +97,9 @@ let bulkSyncToFilesState = {
   shouldStop: false,
   error: null,
   selectedFields: {},
+  corrupted: 0,
+  corruptedFiles: [], // [{ album, file }]
+  halted: false,
 };
 
 // Middleware
@@ -766,6 +769,9 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
       shouldStop: false,
       error: null,
       selectedFields,
+      corrupted: 0,
+      corruptedFiles: [],
+      halted: false,
     };
 
     // Run async - don't await
@@ -801,6 +807,7 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
             artist: album.artist,
           };
 
+          let writeResult;
           try {
             console.log(`\n[${bulkSyncToFilesState.current}/${bulkSyncToFilesState.total}] Syncing to files: ${album.artist} - ${album.title}`);
 
@@ -811,11 +818,32 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
             }
 
             // Write metadata to files
-            const writeResult = await writePlexMetadataToFiles(
+            writeResult = await writePlexMetadataToFiles(
               album.filePath,
               plexAlbum,
               selectedFields
             );
+
+            // Corruption detection takes priority over ordinary failure:
+            // halt the whole bulk run so nothing else gets touched.
+            if (writeResult.corruptedFiles && writeResult.corruptedFiles.length > 0) {
+              for (const file of writeResult.corruptedFiles) {
+                bulkSyncToFilesState.corruptedFiles.push({
+                  albumId: album.id,
+                  plexRatingKey: album.plexRatingKey,
+                  albumTitle: album.title,
+                  albumArtist: album.artist,
+                  file,
+                });
+              }
+              bulkSyncToFilesState.corrupted += writeResult.corruptedFiles.length;
+              bulkSyncToFilesState.failed++;
+              bulkSyncToFilesState.halted = true;
+              bulkSyncToFilesState.shouldStop = true;
+              bulkSyncToFilesState.error = `CORRUPTION DETECTED in "${album.artist} - ${album.title}" — bulk sync halted`;
+              console.error(`\n🚨 Bulk sync halted: corruption in ${writeResult.corruptedFiles.length} file(s) of "${album.artist} - ${album.title}"`);
+              break;
+            }
 
             if (!writeResult.success) {
               throw new Error(writeResult.errors?.join(", ") || "Failed to write to files");
@@ -843,20 +871,26 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
             await new Promise(resolve => setTimeout(resolve, 500));
 
           } catch (error) {
-            // STOP ON FIRST ERROR
+            // LOG + CONTINUE. Corruption halt above is the only thing
+            // that stops the bulk run. Ordinary per-album failures get
+            // persisted to SyncFailure so the user can review them on
+            // /sync-failures?operation=bulk_sync_files after the run.
             console.error(`   ❌ Error: ${error.message}`);
 
-            // Log failure to database with context
             await logSyncFailure(album.id, "bulk_sync_files", error, {
               filePath: album.filePath,
               plexRatingKey: album.plexRatingKey,
+              albumTitle: album.title,
+              albumArtist: album.artist,
               selectedFields,
-            }, null, req.activeLibrary);
+              filesProcessed: writeResult?.filesProcessed,
+              filesFailed: writeResult?.filesFailed,
+              perFileErrors: writeResult?.errors,
+            }, req.activeLibrary);
 
             bulkSyncToFilesState.failed++;
-            bulkSyncToFilesState.error = `Failed to sync "${album.artist} - ${album.title}": ${error.message}`;
-            bulkSyncToFilesState.shouldStop = true;
-            break;
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            continue;
           }
         }
 

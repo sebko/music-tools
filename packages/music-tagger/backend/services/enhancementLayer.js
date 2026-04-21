@@ -127,18 +127,18 @@ export async function recordMetadataMatch(plexRatingKey, serviceName, externalId
       },
     });
 
-    // Step 4: Update album matchStatus to MATCHED (only for Redacted matches)
-    // MusicBrainz matches from Plex are informational only and don't change match status
-    if (normalizedServiceName === "redacted") {
+    // Step 4: Promote UNMATCHED to MATCHED for Redacted matches.
+    // Never downgrade SYNCED back to MATCHED — recording/re-recording
+    // a Redacted match on an already-synced album must not clobber
+    // sync state. MusicBrainz etc. matches from Plex never change status.
+    if (normalizedServiceName === "redacted" && album.matchStatus === "UNMATCHED") {
       await prisma.album.update({
-        where: {
-          id: album.id,
-        },
-        data: {
-          matchStatus: "MATCHED",
-        },
+        where: { id: album.id },
+        data: { matchStatus: "MATCHED" },
       });
       console.log(`  ✓ Album matchStatus updated to MATCHED`);
+    } else if (normalizedServiceName === "redacted") {
+      console.log(`  ℹ️  Album matchStatus unchanged (already ${album.matchStatus})`);
     } else {
       console.log(`  ℹ️  Album matchStatus unchanged (only Redacted matches affect status)`);
     }

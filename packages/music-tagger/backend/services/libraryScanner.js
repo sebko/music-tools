@@ -149,33 +149,14 @@ export async function upsertServiceRelease(serviceName, externalId) {
 }
 
 /**
- * Wipe all enhancement layer tables
- */
-export async function wipeEnhancementTables(libraryName) {
-  console.log(`Wiping enhancement layer tables for library: ${libraryName}...`);
-
-  // Delete scoped records for this library (cascades to related tables)
-  await prisma.album.deleteMany({ where: { libraryName } });
-  await prisma.metadataService.deleteMany();
-
-  // Drop dynamically created service tables
-  const tables = await prisma.$queryRaw`
-    SELECT name FROM sqlite_master
-    WHERE type='table'
-    AND name LIKE '%_releases'
-    AND name NOT IN ('discogs_releases', 'redacted_releases')
-  `;
-
-  for (const table of tables) {
-    console.log(`Dropping table: ${table.name}`);
-    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "${table.name}"`);
-  }
-
-  console.log("Enhancement tables wiped successfully");
-}
-
-/**
- * Scan Plex library and populate enhancement layer
+ * Scan Plex library and populate enhancement layer.
+ *
+ * Upserts albums by stable SHA256 id (file_path + libraryName) so
+ * match_status, sync_at, AlbumMetadataServiceMatch, PlexFileSync,
+ * RedactedPlexSync, and SyncFailure rows all survive rescans.
+ * After a clean completion, albums whose id wasn't seen this run
+ * are deleted (cascades clear their sync records).
+ *
  * @returns {Promise<{ albumsScanned: number, servicesDiscovered: number }>}
  */
 export async function scanPlexLibrary(libraryName = "Music") {
@@ -186,14 +167,11 @@ export async function scanPlexLibrary(libraryName = "Music") {
 
     console.log(`Starting Plex library scan for "${libraryName}"...`);
 
-    // Step 1: Wipe existing data for this library
-    await wipeEnhancementTables(libraryName);
-
-    // Step 2: Connect to the specific Plex library section
+    // Step 1: Connect to the specific Plex library section
     console.log(`Connecting to Plex library section "${libraryName}"...`);
     const section = await getMusicSectionByName(libraryName);
 
-    // Step 3: Fetch all albums from Plex
+    // Step 2: Fetch all albums from Plex
     console.log("Fetching albums from Plex...");
     let allAlbums = [];
     let page = 1;
@@ -227,8 +205,19 @@ export async function scanPlexLibrary(libraryName = "Music") {
     // Update total albums for progress tracking
     scanState.totalAlbums = allAlbums.length;
 
-    // Step 3: Track discovered services
+    // Step 3: Snapshot existing album IDs up front so we can
+    // distinguish inserts from updates without a DB round-trip per album
+    // and compute stale deletions after the loop.
+    const priorAlbums = await prisma.album.findMany({
+      where: { libraryName },
+      select: { id: true },
+    });
+    const priorAlbumIds = new Set(priorAlbums.map((a) => a.id));
+
     const discoveredServices = new Set();
+    const seenAlbumIds = new Set();
+    let insertedCount = 0;
+    let updatedCount = 0;
 
     // Step 4: Process each album
     for (const plexAlbum of allAlbums) {
@@ -286,22 +275,37 @@ export async function scanPlexLibrary(libraryName = "Music") {
           console.warn(`Could not read folder stats for ${location}:`, error.message);
         }
 
-        // Create album record
-        await prisma.album.create({
-          data: {
+        // Upsert album by stable id. matchStatus, syncedAt, and
+        // artwork dimensions are intentionally omitted from `update`
+        // so they survive rescans.
+        const mutableFields = {
+          plexRatingKey: plexAlbum.id,
+          filePath: location,
+          title: plexAlbum.title || "Unknown Album",
+          artist: plexAlbum.artist || "Unknown Artist",
+          year,
+          addedAt,
+          titleSort,
+          genre,
+          folderCreatedAt,
+        };
+
+        await prisma.album.upsert({
+          where: { id: albumId },
+          update: mutableFields,
+          create: {
             id: albumId,
-            plexRatingKey: plexAlbum.id,
-            filePath: location,
-            title: plexAlbum.title || "Unknown Album",
-            artist: plexAlbum.artist || "Unknown Artist",
-            year,
-            addedAt,
-            titleSort,
-            genre,
-            folderCreatedAt,
             libraryName,
+            ...mutableFields,
           },
         });
+
+        seenAlbumIds.add(albumId);
+        if (priorAlbumIds.has(albumId)) {
+          updatedCount++;
+        } else {
+          insertedCount++;
+        }
 
         // Extract artwork dimensions
         try {
@@ -345,12 +349,32 @@ export async function scanPlexLibrary(libraryName = "Music") {
       }
     }
 
+    // Step 5: Delete albums no longer in Plex (only on clean completion).
+    // Skipped when the user stopped the scan so we don't drop albums
+    // that simply weren't processed this run. Cascades clear the
+    // album's matches + sync history.
+    let deletedCount = 0;
+    if (!scanState.shouldStop) {
+      const staleIds = [...priorAlbumIds].filter((id) => !seenAlbumIds.has(id));
+
+      if (staleIds.length > 0) {
+        console.log(`Deleting ${staleIds.length} albums no longer in Plex...`);
+        const CHUNK = 500;
+        for (let i = 0; i < staleIds.length; i += CHUNK) {
+          const result = await prisma.album.deleteMany({
+            where: { libraryName, id: { in: staleIds.slice(i, i + CHUNK) } },
+          });
+          deletedCount += result.count;
+        }
+      }
+    }
+
     // Mark scan as complete
     scanState.isScanning = false;
     scanState.currentAlbum = "";
 
     console.log(
-      `Scan complete: ${scanState.processedAlbums} albums processed, ${discoveredServices.size} metadata services`
+      `Scan complete: ${insertedCount} inserted, ${updatedCount} updated, ${deletedCount} deleted, ${scanState.errors.length} errors, ${discoveredServices.size} metadata services`
     );
 
     return {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useSyncFailures, useFailureCounts, useClearSyncFailures } from "../hooks/useSyncFailures";
 import { PageLoader, Button, FilterToggle, cn, PageHeader, Toolbar, EmptyState } from "@dj-tools/my-component-library";
 import {
@@ -18,7 +18,21 @@ const OPERATION_LABELS = {
 };
 
 function SyncFailuresPage() {
-  const [operationFilter, setOperationFilter] = useState("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlOperation = searchParams.get("operation");
+  const [operationFilter, setOperationFilter] = useState(
+    urlOperation && OPERATION_LABELS[urlOperation] ? urlOperation : "all"
+  );
+
+  const handleFilterChange = (next) => {
+    setOperationFilter(next);
+    if (next === "all") {
+      searchParams.delete("operation");
+    } else {
+      searchParams.set("operation", next);
+    }
+    setSearchParams(searchParams, { replace: true });
+  };
 
   // Fetch failures
   const operation = operationFilter === "all" ? null : operationFilter;
@@ -80,7 +94,7 @@ function SyncFailuresPage() {
           left={
             <FilterToggle
               activeFilter={operationFilter}
-              onFilterChange={setOperationFilter}
+              onFilterChange={handleFilterChange}
               filters={[
                 { key: "all", label: `All (${totalCount})` },
                 { key: "bulk_scan", label: `Scan (${counts.bulk_scan || 0})` },

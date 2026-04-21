@@ -106,7 +106,14 @@ function SyncToFilesDetailPage() {
     try {
       const result = await syncAlbumToFiles(id, selectedFields);
 
-      if (result.success) {
+      // Corruption detection takes priority — never silently succeed.
+      if (result.corruptedFiles && result.corruptedFiles.length > 0) {
+        setSyncMessage({
+          type: "corruption",
+          text: `CORRUPTION DETECTED — audio stream changed in ${result.corruptedFiles.length} file(s). Sync aborted.`,
+          corruptedFiles: result.corruptedFiles,
+        });
+      } else if (result.success) {
         const syncedFieldNames = Object.entries(selectedFields)
           .filter(([, selected]) => selected)
           .map(([key]) => PLEX_TO_FILE_FIELD_LABELS[key] || key)
@@ -437,7 +444,25 @@ function SyncToFilesDetailPage() {
       </div>
 
       {/* Success/Error Message */}
-      {syncMessage && (
+      {syncMessage && syncMessage.type === "corruption" && (
+        <div className="card-brutalist p-4 mb-6 bg-red-100 dark:bg-red-900/40 border-red-700 border-4">
+          <p className="text-base font-heading text-red-900 dark:text-red-100 mb-2">
+            🚨 {syncMessage.text}
+          </p>
+          {syncMessage.corruptedFiles && syncMessage.corruptedFiles.length > 0 && (
+            <ul className="text-sm font-mono text-red-900 dark:text-red-100 list-disc list-inside">
+              {syncMessage.corruptedFiles.map((file) => (
+                <li key={file}>{file}</li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-3 text-xs text-red-900 dark:text-red-100">
+            The audio stream of the above file(s) changed during the write. Do not
+            re-run sync on this album until you've inspected the file(s) manually.
+          </p>
+        </div>
+      )}
+      {syncMessage && syncMessage.type !== "corruption" && (
         <div
           className={cn(
             "card-brutalist p-4 mb-6",

@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useBulkSyncToFiles } from "../hooks/useBulkSyncToFiles";
 import { Button, Modal } from "@dj-tools/my-component-library";
 
@@ -28,7 +29,12 @@ function BulkSyncToFilesProgressModal({ isOpen, onClose, onComplete }) {
     failed: 0,
     currentAlbum: null,
     error: null,
+    corrupted: 0,
+    corruptedFiles: [],
+    halted: false,
   };
+
+  const hasCorruption = (progressData.corruptedFiles?.length || 0) > 0;
 
   // Calculate progress percentage
   const progressPercent =
@@ -46,8 +52,10 @@ function BulkSyncToFilesProgressModal({ isOpen, onClose, onComplete }) {
   const isComplete =
     !progressData.isSyncing &&
     progressData.current === progressData.total &&
-    progressData.total > 0;
-  const hasError = progressData.error && !progressData.isSyncing;
+    progressData.total > 0 &&
+    !hasCorruption;
+  const hasError = progressData.error && !progressData.isSyncing && !hasCorruption;
+  const hasFailures = !progressData.isSyncing && progressData.failed > 0 && !hasCorruption;
 
   return (
     <Modal
@@ -59,16 +67,20 @@ function BulkSyncToFilesProgressModal({ isOpen, onClose, onComplete }) {
     >
       <div className="mb-4">
         <h2 className="text-xl font-heading text-foreground mb-2">
-          {progressData.isSyncing
-            ? "Syncing to Files"
-            : isComplete
-              ? "Sync Complete!"
-              : hasError
-                ? "Sync Error"
-                : "Sync Stopped"}
+          {hasCorruption
+            ? "🚨 Corruption Detected"
+            : progressData.isSyncing
+              ? "Syncing to Files"
+              : isComplete
+                ? hasFailures
+                  ? "Sync Complete with Failures"
+                  : "Sync Complete!"
+                : hasError
+                  ? "Sync Error"
+                  : "Sync Stopped"}
         </h2>
 
-        {progressData.isSyncing && (
+        {progressData.isSyncing && !hasCorruption && (
           <p className="text-sm text-foreground/60">
             Writing Plex metadata to local file tags...
           </p>
@@ -105,6 +117,41 @@ function BulkSyncToFilesProgressModal({ isOpen, onClose, onComplete }) {
         </div>
       )}
 
+      {/* Corruption Banner - takes priority over regular error */}
+      {hasCorruption && (
+        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/40 rounded-base border-4 border-red-700">
+          <p className="text-sm font-heading text-red-900 dark:text-red-100 mb-2">
+            Audio stream changed during write — bulk sync halted.
+          </p>
+          <ul className="text-xs font-mono text-red-900 dark:text-red-100 list-disc list-inside max-h-40 overflow-auto">
+            {(progressData.corruptedFiles || []).map((c, i) => (
+              <li key={`${c.albumId || c.plexRatingKey || i}-${c.file}`}>
+                {c.albumArtist ? `${c.albumArtist} — ${c.albumTitle}: ` : ""}
+                {c.file}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-red-900 dark:text-red-100">
+            Do not re-run sync on affected album(s) until you've inspected the file(s) manually.
+          </p>
+        </div>
+      )}
+
+      {/* Failures Summary — ordinary per-album failures (not corruption) */}
+      {hasFailures && (
+        <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-base border-2 border-yellow-500">
+          <p className="text-sm font-heading text-yellow-900 dark:text-yellow-100">
+            {progressData.failed} album(s) failed.{" "}
+            <Link
+              to="/sync-failures?operation=bulk_sync_files"
+              className="underline"
+            >
+              View details →
+            </Link>
+          </p>
+        </div>
+      )}
+
       {/* Error Message */}
       {hasError && (
         <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-base border-2 border-destructive">
@@ -118,7 +165,7 @@ function BulkSyncToFilesProgressModal({ isOpen, onClose, onComplete }) {
       {/* Stats */}
       {progressData.total > 0 && (
         <div className="mb-4 text-sm text-foreground/60">
-          <div className="grid grid-cols-3 gap-4">
+          <div className={`grid ${hasCorruption || progressData.corrupted > 0 ? "grid-cols-4" : "grid-cols-3"} gap-4`}>
             <div>
               <span className="block font-heading">Total</span>
               <span>{progressData.total.toLocaleString()}</span>
@@ -135,6 +182,14 @@ function BulkSyncToFilesProgressModal({ isOpen, onClose, onComplete }) {
                 {progressData.failed.toLocaleString()}
               </span>
             </div>
+            {(hasCorruption || progressData.corrupted > 0) && (
+              <div>
+                <span className="block font-heading">Corrupted</span>
+                <span className="text-red-700 dark:text-red-300 font-bold">
+                  {(progressData.corrupted || 0).toLocaleString()}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}

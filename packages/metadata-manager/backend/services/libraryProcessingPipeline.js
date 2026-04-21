@@ -15,14 +15,18 @@ import {
 // User-facing pipeline phases the wizard's Finalise step lets you toggle.
 // The 3 internal `beet update` syncs are not in this set — they're triggered
 // automatically when paired tag-mutating phases are enabled.
+// replaygain + scrubbing temporarily disabled — investigating FLAC audio-frame
+// corruption (UNKNOWN metaflac blocks written over audio). Disabling replaygain
+// alone still corrupted 13 files on 2026-04-21 with the same signature, so
+// scrub (the phase named in upstream beets issue #2743) is the next suspect.
+// Re-add phases here and to FINALISE_PHASES in SetupWizard.jsx once the root
+// cause is isolated.
 export const ALL_PHASES = Object.freeze([
   "checking",
   "setAlbumTags",
-  "scrubbing",
   "normalizingGenres",
   "artwork",
   "ftintitle",
-  "replaygain",
 ]);
 
 /**

@@ -12,6 +12,7 @@ import { exec, execFile } from "child_process";
 import { promisify } from "util";
 import { fetchImage, embedArtworkToFile } from "./artwork/artworkManager.js";
 import { captureTimestamps, restoreTimestamps } from "./timestamps.js";
+import { computeAudioStreamHash } from "./audioIntegrity.js";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -234,8 +235,16 @@ async function writeTagsM4A(filePath, tags) {
  * @param {Object} tags - Object with ID3 tag names and values
  */
 function writeID3TagsMP3(filePath, tags) {
-  // Read existing tags first
-  const existingTags = NodeID3.read(filePath) || {};
+  // Read existing tags first. Some MP3s (notably Serato-tagged files)
+  // have malformed ID3 frames that make node-id3tag throw on read;
+  // fail early with a clear message so the outer loop records the
+  // file as failed without ever attempting a write.
+  let existingTags;
+  try {
+    existingTags = NodeID3.read(filePath) || {};
+  } catch (readErr) {
+    throw new Error(`Unparseable ID3 tags: ${readErr.message}`);
+  }
 
   // Filter out malformed GEOB frames (missing encapsulatedObject)
   // These cause node-id3 to crash when trying to rewrite them
@@ -389,8 +398,12 @@ export async function writePlexMetadataToFiles(albumPath, plexAlbum, selectedFie
     let filesUpdated = 0;
     let filesFailed = 0;
     const errors = [];
+    const corruptedFiles = [];
+    let aborted = false;
 
     for (const file of audioFiles) {
+      if (aborted) break;
+
       const filePath = join(albumPath, file);
       const ext = extname(file).toLowerCase();
       const format = ext === ".flac" ? "flac" : ext === ".m4a" ? "m4a" : "mp3";
@@ -412,6 +425,18 @@ export async function writePlexMetadataToFiles(albumPath, plexAlbum, selectedFie
 
         if (Object.keys(tags).length === 0 && !artworkImage) {
           console.log(`   ⚠️ ${file} - No tags to write`);
+          continue;
+        }
+
+        // Pre-write: hash audio stream. Throws if the file is already
+        // unreadable — we refuse to write over a broken file.
+        let preHash;
+        try {
+          preHash = await computeAudioStreamHash(filePath, format);
+        } catch (preErr) {
+          filesFailed++;
+          errors.push(`${file}: pre-check failed — file already unreadable, skipping write (${preErr.message})`);
+          console.error(`   ❌ ${file} - pre-check failed, skipping write: ${preErr.message}`);
           continue;
         }
 
@@ -443,6 +468,35 @@ export async function writePlexMetadataToFiles(albumPath, plexAlbum, selectedFie
           await restoreTimestamps(filePath, originalTimestamps);
         }
 
+        // Post-write: hash again and confirm audio stream is byte-identical.
+        // Any mismatch — or a failure to even hash — is a corruption event;
+        // we abort the rest of the album so the user can investigate
+        // before more files are touched.
+        let postHash;
+        try {
+          postHash = await computeAudioStreamHash(filePath, format);
+        } catch (postErr) {
+          corruptedFiles.push(file);
+          filesFailed++;
+          errors.push(`CORRUPTION: ${file} — post-write hash failed (${postErr.message}). preHash=${preHash}`);
+          console.error(`   🚨 CORRUPTION DETECTED: ${file}`);
+          console.error(`      post-write hash threw: ${postErr.message}`);
+          console.error(`      preHash=${preHash}`);
+          aborted = true;
+          break;
+        }
+
+        if (postHash !== preHash) {
+          corruptedFiles.push(file);
+          filesFailed++;
+          errors.push(`CORRUPTION: ${file} — audio stream changed. preHash=${preHash} postHash=${postHash}`);
+          console.error(`   🚨 CORRUPTION DETECTED: ${file}`);
+          console.error(`      preHash  = ${preHash}`);
+          console.error(`      postHash = ${postHash}`);
+          aborted = true;
+          break;
+        }
+
         filesUpdated++;
         console.log(`   ✅ ${file}`);
       } catch (error) {
@@ -452,21 +506,25 @@ export async function writePlexMetadataToFiles(albumPath, plexAlbum, selectedFie
       }
     }
 
-    const overallSuccess = filesUpdated > 0 && filesFailed === 0;
+    const overallSuccess = filesUpdated > 0 && filesFailed === 0 && corruptedFiles.length === 0;
 
-    console.log(`\n   Summary: ${filesUpdated} updated, ${filesFailed} failed`);
+    console.log(`\n   Summary: ${filesUpdated} updated, ${filesFailed} failed${corruptedFiles.length > 0 ? `, ${corruptedFiles.length} CORRUPTED` : ""}`);
 
     return {
       success: overallSuccess,
       filesProcessed: audioFiles.length,
       filesUpdated,
       filesFailed,
+      corruptedFiles,
+      aborted,
       errors: errors.length > 0 ? errors : undefined,
-      message: overallSuccess
-        ? `Successfully updated ${filesUpdated} files`
-        : filesFailed === audioFiles.length
-          ? "Failed to update any files"
-          : `Partially successful: ${filesUpdated} updated, ${filesFailed} failed`,
+      message: corruptedFiles.length > 0
+        ? `CORRUPTION DETECTED in ${corruptedFiles.length} file(s); album sync aborted`
+        : overallSuccess
+          ? `Successfully updated ${filesUpdated} files`
+          : filesFailed === audioFiles.length
+            ? "Failed to update any files"
+            : `Partially successful: ${filesUpdated} updated, ${filesFailed} failed`,
     };
   } catch (error) {
     console.error(`Error writing Plex metadata to files:`, error);

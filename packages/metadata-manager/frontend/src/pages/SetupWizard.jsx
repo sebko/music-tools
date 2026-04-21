@@ -985,11 +985,11 @@ const PHASE_LABELS = {
 const FINALISE_PHASES = [
   { id: "checking", label: "Integrity check (beet bad)" },
   { id: "setAlbumTags", label: "Album tags" },
-  { id: "scrubbing", label: "Tag scrub" },
   { id: "normalizingGenres", label: "Genre normalisation" },
   { id: "artwork", label: "Album art" },
   { id: "ftintitle", label: '"feat." into title' },
-  { id: "replaygain", label: "Volume normalisation (ReplayGain)" },
+  // scrubbing + replaygain temporarily removed — investigating FLAC
+  // audio-frame corruption. Re-add once the root cause is isolated.
 ];
 
 function StepFinalise({ onNext }) {
