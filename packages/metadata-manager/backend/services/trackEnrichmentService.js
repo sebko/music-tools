@@ -120,11 +120,11 @@ const SYSTEM_PROMPT = `You are a DJ music metadata expert. Given a track's curre
 
 Rules:
 - If you recognize the track, use your knowledge to fill in missing fields
-- If you are not confident about a track, use web search to look it up before answering
+- If you are not certain about a track OR the artist sits in an underground / regional scene you don't have strong knowledge of (e.g. plugg, rage, cumbia rebajada, niche dub, drill subscenes), call web_search before answering. Prefer rateyourmusic.com and discogs.com for genre tags.
 - Correct obvious misspellings in artist/title (e.g., "Deadmau5" not "Deadmouse")
 - Remove label names or catalog numbers that got concatenated into the title field
 - Split "Artist - Title" patterns that ended up in a single field
-- Assign 1-3 specific genre names. Be specific: "Deep House" not "House", "Liquid Drum and Bass" not "Drum and Bass"
+- Assign 1-3 specific genre names. Be specific: prefer "Deep House" over "House", "Liquid Drum and Bass" over "Drum and Bass", "Cloud Rap" over "Rap", "Plugg" over "Hip Hop", "Cumbia Rebajada" over "Cumbia", "Dub Techno" over "Techno". When a track sits in a recognised subgenre scene (rage, plugg, cloud rap, jersey club, footwork, dub, dub techno, dancehall, cumbia rebajada, jungle, halftime, drill, hyperpop, ambient dub, etc.), use the subgenre name — never the umbrella term.
 - For BPM and key, only include if you are confident from your knowledge of the track. Never guess.
 - proposedFilename should follow the format: "Artist - Title.ext" using the corrected artist and title
 - Return ONLY a valid JSON array, no markdown fencing or code blocks
@@ -142,7 +142,7 @@ For each track, return a JSON object with these fields:
   "confidence": "high", "medium", or "low"
 }`;
 
-function buildUserPrompt(tracks) {
+function buildUserPrompt(tracks, opts = {}) {
   const trackBlocks = tracks.map((t, i) => {
     const lines = [`--- Track ${i + 1} ---`];
     lines.push(`Filename: ${t.filename}`);
@@ -163,7 +163,11 @@ function buildUserPrompt(tracks) {
     return lines.join("\n");
   });
 
-  return `Enrich these tracks:\n\n${trackBlocks.join("\n\n")}`;
+  const preamble = opts.forceSearch
+    ? "You returned low confidence on a previous pass for these tracks. Call web_search on rateyourmusic.com or discogs.com for each one before answering this time, and prefer the most specific subgenre listed there.\n\n"
+    : "";
+
+  return `${preamble}Enrich these tracks:\n\n${trackBlocks.join("\n\n")}`;
 }
 
 function getClient() {
@@ -173,9 +177,24 @@ function getClient() {
   return new Anthropic();
 }
 
-async function callClaude(tracks) {
+// Domains the Sonnet web search is allowed to consult. Curated for
+// genre-rich, taxonomy-friendly sources so obscure subgenres (plugg, rage,
+// cumbia rebajada, dub variants) come back as the specific tag rather than
+// the umbrella term. Subdomains match automatically — no protocol, no wildcard.
+const WEB_SEARCH_ALLOWED_DOMAINS = [
+  "rateyourmusic.com",
+  "discogs.com",
+  "bandcamp.com",
+  "boomkat.com",
+  "ra.co",
+  "genius.com",
+  "pitchfork.com",
+  "en.wikipedia.org",
+];
+
+async function callClaude(tracks, opts = {}) {
   const client = getClient();
-  const userMessage = { role: "user", content: buildUserPrompt(tracks) };
+  const userMessage = { role: "user", content: buildUserPrompt(tracks, opts) };
   const messages = [userMessage];
 
   let response;
@@ -187,10 +206,15 @@ async function callClaude(tracks) {
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages,
-      tools: [{ type: "web_search_20260209", name: "web_search" }],
+      tools: [{
+        type: "web_search_20260209",
+        name: "web_search",
+        allowed_domains: WEB_SEARCH_ALLOWED_DOMAINS,
+        max_uses: 5,
+      }],
     });
 
-    console.log(`[enrichment] API call ${loopCount}, stop_reason=${response.stop_reason}, content blocks=${response.content.length}`);
+    console.log(`[enrichment] API call ${loopCount}, stop_reason=${response.stop_reason}, content blocks=${response.content.length}${opts.forceSearch ? " (forced-search retry)" : ""}`);
 
     if (response.stop_reason === "end_turn") break;
 
@@ -211,6 +235,30 @@ async function callClaude(tracks) {
   // outermost bracketed array/object rather than trusting the whole string.
   const cleaned = extractJson(text);
   return JSON.parse(cleaned);
+}
+
+// Re-runs only the low-confidence tracks with a forced-search prompt and
+// merges the retried results back over the originals by filename. Latency
+// cost is paid only on weak tracks; high-confidence tracks pass through.
+async function callClaudeWithRetry(tracks) {
+  const initial = await callClaude(tracks);
+
+  const lowIndices = initial
+    .map((r, i) => (r?.confidence === "low" ? i : -1))
+    .filter((i) => i >= 0);
+
+  if (lowIndices.length === 0) return initial;
+
+  const lowTracks = lowIndices.map((i) => tracks[i]);
+  const retried = await callClaude(lowTracks, { forceSearch: true });
+
+  const byFilename = new Map();
+  retried.forEach((r, i) => byFilename.set(lowTracks[i].filename, r));
+
+  return initial.map((r, i) => {
+    const replacement = byFilename.get(tracks[i].filename);
+    return replacement ?? r;
+  });
 }
 
 function extractJson(text) {
@@ -396,7 +444,7 @@ export async function enrichTracks(filePaths) {
  */
 export async function enrichSingleTrackWithClaude(filePath) {
   const meta = await readFileMetadata(filePath);
-  const claudeResults = await callClaude([meta]);
+  const claudeResults = await callClaudeWithRetry([meta]);
   const claudeResult = claudeResults?.[0];
   if (!claudeResult) {
     throw new Error("No result from Claude");
