@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useSyncFailures, useFailureCounts, useClearSyncFailures } from "../hooks/useSyncFailures";
-import { PageLoader, Button, FilterToggle, cn, PageHeader, Toolbar, EmptyState } from "@dj-tools/my-component-library";
+import { PageLoader, Button, FilterToggle, cn, PageHeader, Toolbar, SearchInput, EmptyState } from "@dj-tools/my-component-library";
 import {
   AlertCircle,
   CheckCircle,
@@ -34,9 +34,37 @@ function SyncFailuresPage() {
     setSearchParams(searchParams, { replace: true });
   };
 
+  // Search from URL params
+  const searchQuery = searchParams.get("search") || "";
+  const [searchInput, setSearchInput] = useState(searchQuery);
+
+  useEffect(() => {
+    setSearchInput(searchQuery);
+  }, [searchQuery]);
+
+  const handleSearchSubmitValue = (val) => {
+    const trimmed = (val ?? searchInput).trim();
+    if (trimmed) {
+      searchParams.set("search", trimmed);
+    } else {
+      searchParams.delete("search");
+    }
+    setSearchParams(searchParams, { replace: true });
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput("");
+    searchParams.delete("search");
+    setSearchParams(searchParams, { replace: true });
+  };
+
   // Fetch failures
   const operation = operationFilter === "all" ? null : operationFilter;
-  const { data, isLoading, isError, error, refetch } = useSyncFailures(operation, 100);
+  const { data, isLoading, isError, error, refetch } = useSyncFailures(
+    operation,
+    100,
+    searchQuery || null,
+  );
 
   // Fetch counts for filter badges
   const { data: countsData } = useFailureCounts();
@@ -104,7 +132,15 @@ function SyncFailuresPage() {
             />
           }
           right={
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <SearchInput
+                value={searchInput}
+                onChange={setSearchInput}
+                onSubmit={handleSearchSubmitValue}
+                onClear={handleClearSearch}
+                placeholder="Search failures"
+                className="w-48"
+              />
               <Button
                 onClick={() => refetch()}
                 variant="secondary"
@@ -132,11 +168,24 @@ function SyncFailuresPage() {
       {failures.length === 0 ? (
         <EmptyState
           icon={<CheckCircle className="w-16 h-16 text-green-500" />}
-          heading="No failures"
+          heading={
+            searchQuery
+              ? `No failures match "${searchQuery}"`
+              : "No failures"
+          }
           description={
-            operationFilter === "all"
-              ? "All sync operations completed successfully."
-              : `No ${OPERATION_LABELS[operationFilter]} failures found.`
+            searchQuery
+              ? "Try a different search or clear it to see all failures."
+              : operationFilter === "all"
+                ? "All sync operations completed successfully."
+                : `No ${OPERATION_LABELS[operationFilter]} failures found.`
+          }
+          action={
+            searchQuery ? (
+              <Button onClick={handleClearSearch} variant="primary" size="sm">
+                Clear Search
+              </Button>
+            ) : null
           }
         />
       ) : (

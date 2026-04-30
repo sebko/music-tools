@@ -39,11 +39,26 @@ export async function logSyncFailure(albumId, operation, error, details = null, 
  *
  * @param {string|null} operation - Filter by operation type, or null for all
  * @param {number} limit - Maximum number of failures to return
+ * @param {string} libraryName - Library to scope results to
+ * @param {string|null} search - Optional substring filter on album title,
+ *   album artist, or error text (case-insensitive via SQLite default).
  * @returns {Promise<Array>} Array of failure records with album info
  */
-export async function getRecentFailures(operation = null, limit = 50, libraryName = "Music") {
+export async function getRecentFailures(
+  operation = null,
+  limit = 50,
+  libraryName = "Music",
+  search = null,
+) {
   const where = { libraryName };
   if (operation) where.operation = operation;
+  if (search) {
+    where.OR = [
+      { error: { contains: search } },
+      { album: { is: { title: { contains: search } } } },
+      { album: { is: { artist: { contains: search } } } },
+    ];
+  }
   return prisma.syncFailure.findMany({
     where,
     orderBy: { createdAt: "desc" },

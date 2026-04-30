@@ -104,6 +104,9 @@ package-lock.json
 # Backup/snapshot files
 *-snapshot-*.tsv
 
+# metadata-manager runtime data (scan results log, etc.)
+packages/metadata-manager/backend/data/
+
 # OS generated files
 .DS_Store
 .DS_Store?

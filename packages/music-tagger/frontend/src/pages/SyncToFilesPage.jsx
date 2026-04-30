@@ -9,6 +9,7 @@ import {
   cn,
   PageHeader,
   Toolbar,
+  SearchInput,
   CardGrid,
   MediaCard,
   Badge,
@@ -47,6 +48,14 @@ function SyncToFilesPage() {
   // Secondary filter for synced tab (artwork quality or sync completeness)
   const qualityFilter = searchParams.get("quality") || "all";
 
+  // Search from URL params
+  const searchQuery = searchParams.get("search") || "";
+  const [searchInput, setSearchInput] = useState(searchQuery);
+
+  useEffect(() => {
+    setSearchInput(searchQuery);
+  }, [searchQuery]);
+
   // Pagination from URL params
   const limit = parseInt(searchParams.get("limit")) || 50;
   const page = Math.max(1, parseInt(searchParams.get("page")) || 1);
@@ -61,7 +70,7 @@ function SyncToFilesPage() {
     limit,
     "addedAt",
     "desc",
-    "",
+    searchQuery,
     "synced", // Only show albums that have been synced to Plex
     activeTab, // fileSyncStatus filter
     artworkQuality,
@@ -69,6 +78,8 @@ function SyncToFilesPage() {
   );
 
   // Fetch counts for both tabs (only count albums synced to Plex)
+  // Counts are NOT scoped by search — they reflect the whole library so the
+  // user can see global tab totals regardless of what they typed.
   const { data: unsyncedData } = useAlbums(1, 1, "addedAt", "desc", "", "synced", "unsynced");
   const { data: syncedData } = useAlbums(1, 1, "addedAt", "desc", "", "synced", "synced");
 
@@ -109,6 +120,26 @@ function SyncToFilesPage() {
       newParams.quality = filter;
     }
     newParams.page = "1"; // Reset to first page on filter change
+    setSearchParams(newParams);
+  };
+
+  const handleSearchSubmitValue = (val) => {
+    const trimmed = (val ?? searchInput).trim();
+    const newParams = Object.fromEntries(searchParams.entries());
+    if (trimmed) {
+      newParams.search = trimmed;
+    } else {
+      delete newParams.search;
+    }
+    newParams.page = "1";
+    setSearchParams(newParams);
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput("");
+    const newParams = Object.fromEntries(searchParams.entries());
+    delete newParams.search;
+    newParams.page = "1";
     setSearchParams(newParams);
   };
 
@@ -190,30 +221,51 @@ function SyncToFilesPage() {
           title="Sync to Files"
           subtitle="Write Plex metadata (genres, styles) to your local audio file tags."
         >
-          <div className="flex flex-wrap items-center gap-4 mb-6">
-            {filterControls}
-          </div>
+          <Toolbar
+            left={filterControls}
+            right={
+              <SearchInput
+                value={searchInput}
+                onChange={setSearchInput}
+                onSubmit={handleSearchSubmitValue}
+                onClear={handleClearSearch}
+                placeholder="Search albums"
+                className="w-48"
+              />
+            }
+          />
         </PageHeader>
 
         <EmptyState
           icon={<Music className="w-16 h-16" />}
           heading={
-            activeTab === "synced"
-              ? qualityFilter === "non-hd"
-                ? "No non-HD artwork albums"
-                : qualityFilter === "incomplete"
-                  ? "No incomplete sync albums"
-                  : "No synced albums"
-              : "No unsynced albums"
+            searchQuery
+              ? `No albums match "${searchQuery}"`
+              : activeTab === "synced"
+                ? qualityFilter === "non-hd"
+                  ? "No non-HD artwork albums"
+                  : qualityFilter === "incomplete"
+                    ? "No incomplete sync albums"
+                    : "No synced albums"
+                : "No unsynced albums"
           }
           description={
-            activeTab === "synced"
-              ? qualityFilter === "non-hd"
-                ? "All synced albums have HD artwork."
-                : qualityFilter === "incomplete"
-                  ? "All synced albums have all fields synced."
-                  : "Sync albums from the Unsynced tab to see them here."
-              : "All albums have been synced to files."
+            searchQuery
+              ? "Try a different search or clear it to see all albums."
+              : activeTab === "synced"
+                ? qualityFilter === "non-hd"
+                  ? "All synced albums have HD artwork."
+                  : qualityFilter === "incomplete"
+                    ? "All synced albums have all fields synced."
+                    : "Sync albums from the Unsynced tab to see them here."
+                : "All albums have been synced to files."
+          }
+          action={
+            searchQuery ? (
+              <Button onClick={handleClearSearch} variant="primary" size="sm">
+                Clear Search
+              </Button>
+            ) : null
           }
         />
       </div>
@@ -230,6 +282,14 @@ function SyncToFilesPage() {
           left={filterControls}
           right={
             <div className="flex flex-wrap items-center gap-3">
+              <SearchInput
+                value={searchInput}
+                onChange={setSearchInput}
+                onSubmit={handleSearchSubmitValue}
+                onClear={handleClearSearch}
+                placeholder="Search albums"
+                className="w-48"
+              />
               {activeTab === "unsynced" && unsyncedCount > 0 && (
                 <Button
                   onClick={handleOpenBulkSync}

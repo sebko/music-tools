@@ -17,14 +17,15 @@ import { useLibrary } from "./useLibrary";
  *
  * @param {string} [operation] - Filter by operation type
  * @param {number} [limit=50] - Maximum failures to return
+ * @param {string} [search] - Substring match on album title/artist or error
  * @returns {Object} TanStack Query result
  */
-export function useSyncFailures(operation = null, limit = 50) {
+export function useSyncFailures(operation = null, limit = 50, search = null) {
   const { activeLibrary } = useLibrary();
 
   return useQuery({
-    queryKey: ["syncFailures", activeLibrary, { operation, limit }],
-    queryFn: () => fetchSyncFailures({ operation, limit }),
+    queryKey: ["syncFailures", activeLibrary, { operation, limit, search }],
+    queryFn: () => fetchSyncFailures({ operation, limit, search }),
     staleTime: 30 * 1000, // 30 seconds
   });
 }

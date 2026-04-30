@@ -50,12 +50,12 @@ def main() -> int:
     suggestions: dict[str, list[str]] = {}
     for raw_path in paths:
         try:
-            # Beets stores `path` as bytes; query by the text form.
+            # Beets stores `path` as bytes; query by the text form. Inbox
+            # files haven't been `beet import`ed yet at review time, so fall
+            # back to reading tags directly off disk via Item.from_path so
+            # the plugin still has artist/title to query last.fm with.
             items = list(lib.items(f'path:"{raw_path}"'))
-            if not items:
-                print(f"[lastgenre] no item for {raw_path}", file=sys.stderr)
-                continue
-            item = items[0]
+            item = items[0] if items else beets_library.Item.from_path(raw_path)
             genres, label = plugin._get_genre(item)
             if genres:
                 # _get_genre returns a semicolon-separated string-ish list in

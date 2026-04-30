@@ -35,11 +35,13 @@ export function MetadataRow({
   const normalizedRight = normalizeValue(rightValue);
 
   // Auto-detect if values differ
-  // Only highlight if:
-  // 1. Left has a value (normalizedLeft !== null)
-  // 2. AND values are different (normalizedLeft !== normalizedRight)
+  // Only highlight if BOTH sides hold a real value AND they're different.
+  // Empty proposed → no highlight + no checkbox: there's nothing to apply,
+  // so it'd be misleading to render the cell as "selected".
   const isDifferent =
-    normalizedLeft !== null && normalizedLeft !== normalizedRight;
+    normalizedLeft !== null &&
+    normalizedRight !== null &&
+    normalizedLeft !== normalizedRight;
 
   // Show checkbox if:
   // - Field was already synced (show checked+disabled), OR

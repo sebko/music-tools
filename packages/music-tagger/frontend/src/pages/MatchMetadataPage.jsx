@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAlbum } from "../hooks/useAlbum";
+import { useMatchAlbum } from "../hooks/useMatchAlbum";
 import { Button, cn, EmptyState } from "@dj-tools/my-component-library";
 import Lightbox from "../components/Lightbox";
 import { ArrowLeft, Music, ZoomIn } from "lucide-react";
@@ -74,11 +75,11 @@ function MatchMetadataPage() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
-  // Apply metadata state
-  const [isApplying, setIsApplying] = useState(false);
-
   // Success/error message state
   const [applyMessage, setApplyMessage] = useState(null); // { type: 'success' | 'error', text: string }
+
+  const matchAlbum = useMatchAlbum(id);
+  const isApplying = matchAlbum.isPending;
 
   // Fetch Redacted data
   useEffect(() => {
@@ -346,32 +347,22 @@ function MatchMetadataPage() {
           size="md"
           isLoading={isApplying}
           onClick={async () => {
-            setIsApplying(true);
             setApplyMessage(null);
-
-            console.log('Matching album:', { groupId, service: 'redacted' });
-
             try {
-              const response = await fetch(`/api/albums/${id}/metadata/match`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  service: 'redacted',
-                  groupId
-                })
+              const result = await matchAlbum.mutateAsync({
+                service: "redacted",
+                groupId,
               });
 
-              const result = await response.json();
-              console.log('Match result:', result);
-
-              if (response.ok && result.success) {
-                // Success!
+              if (result?.success) {
                 setApplyMessage({
-                  type: 'success',
-                  text: 'Album matched successfully! You can sync it later to apply metadata.'
+                  type: "success",
+                  text: "Album matched successfully! You can sync it later to apply metadata.",
                 });
 
-                // Redirect to matched tab after 2 seconds
+                // Albums cache was already invalidated in the mutation's
+                // onSuccess — the Matched tab will pick up the new row
+                // on mount without a manual refresh.
                 setTimeout(() => {
                   const library = searchParams.get("library");
                   const params = new URLSearchParams({ filter: "matched" });
@@ -379,21 +370,17 @@ function MatchMetadataPage() {
                   navigate(`/?${params.toString()}`);
                 }, 2000);
               } else {
-                // Failure
-                const errorText = result.message || result.error || 'Failed to match album';
                 setApplyMessage({
-                  type: 'error',
-                  text: errorText
+                  type: "error",
+                  text: result?.message || result?.error || "Failed to match album",
                 });
               }
             } catch (error) {
-              console.error('Match album error:', error);
+              console.error("Match album error:", error);
               setApplyMessage({
-                type: 'error',
-                text: `Network error: ${error.message}`
+                type: "error",
+                text: `Network error: ${error.message}`,
               });
-            } finally {
-              setIsApplying(false);
             }
           }}
         >

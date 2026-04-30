@@ -1,9 +1,26 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { extname } from "node:path";
-import NodeID3 from "node-id3tag";
+import { dirname, extname, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const BEETS_VENV_PY = resolvePath(
+  __dirname,
+  "..",
+  "..",
+  "beets",
+  ".venv",
+  "bin",
+  "python",
+);
+const WRITE_GENRES_MP3_SCRIPT = resolvePath(
+  __dirname,
+  "..",
+  "scripts",
+  "write_genres_mp3.py",
+);
 
 /**
  * Normalize a genre string to Title Case.
@@ -54,7 +71,7 @@ export async function writeGenres(filePath, genres) {
 
   const ext = extname(filePath).toLowerCase();
   if (ext === ".mp3") {
-    writeGenresMp3(filePath, clean);
+    await writeGenresMp3(filePath, clean);
     return;
   }
   if (ext === ".flac") {
@@ -64,20 +81,16 @@ export async function writeGenres(filePath, genres) {
   throw new Error(`writeGenres: unsupported file extension ${ext}`);
 }
 
-function writeGenresMp3(filePath, genres) {
-  // node-id3tag's update() is broken for text frames: it converts alias
-  // keys (genre) to raw keys (TCON) before calling write(), but write()'s
-  // frame lookup only matches alias keys. The workaround is to read the
-  // existing tags (which come back as aliases), drop the raw copy, merge
-  // the new genre array in, and write the whole alias-keyed object back.
-  const existing = NodeID3.read(filePath) || {};
-  delete existing.raw;
-  const merged = { ...existing, genre: genres };
-  const result = NodeID3.write(merged, filePath);
-  if (result !== true) {
-    const detail = result instanceof Error ? result.message : String(result);
-    throw new Error(`node-id3tag write failed for ${filePath}: ${detail}`);
-  }
+async function writeGenresMp3(filePath, genres) {
+  // node-id3tag.write() silently drops TCON when the existing tags
+  // contain both USLT (lyrics) and APIC (cover art) — it returns true
+  // but the frame is missing on read-back. Mutagen handles ID3v2.4
+  // multi-value TCON correctly; we shell out to the beets venv python.
+  await execFileAsync(
+    BEETS_VENV_PY,
+    [WRITE_GENRES_MP3_SCRIPT, filePath, ...genres],
+    { timeout: 30_000 },
+  );
 }
 
 async function writeGenresFlac(filePath, genres) {

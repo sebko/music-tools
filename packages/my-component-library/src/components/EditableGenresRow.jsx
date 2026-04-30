@@ -24,6 +24,9 @@ import { cn } from "../lib/utils";
  * @param {Array<{source: string, label?: string, genres: string[]}>} props.suggestions
  *     One entry per suggestion source. `label` defaults to a title-cased
  *     `source` string.
+ * @param {string} [props.fieldName] - Field key for opt-in/out checkbox
+ * @param {Object} [props.selectedFields] - Map of fieldName → boolean checked
+ * @param {Function} [props.toggleField] - Callback to toggle the checkbox
  */
 export function EditableGenresRow({
   label = "Genres",
@@ -31,12 +34,16 @@ export function EditableGenresRow({
   selectedGenres = [],
   onChange,
   suggestions = [],
+  fieldName,
+  selectedFields,
+  toggleField,
 }) {
   const [inputValue, setInputValue] = useState("");
 
   // Normalize for case-insensitive dedupe.
   const key = (s) => String(s).trim().toLowerCase();
   const selectedKeys = new Set(selectedGenres.map(key));
+  const currentKeys = new Set(currentGenres.map(key));
 
   const titleCase = (s) =>
     String(s)
@@ -85,9 +92,18 @@ export function EditableGenresRow({
 
   return (
     <>
-      {/* Checkbox column (unused — always-on editor) */}
+      {/* Checkbox column — opt in/out of writing the selected genres */}
       <div className="flex items-center py-2">
-        <div className="w-4 h-4" />
+        {fieldName ? (
+          <input
+            type="checkbox"
+            checked={selectedFields?.[fieldName] || false}
+            onChange={() => toggleField?.(fieldName)}
+            className="w-4 h-4 accent-main"
+          />
+        ) : (
+          <div className="w-4 h-4" />
+        )}
       </div>
       <div className="font-heading text-foreground text-sm py-2">{label}</div>
 
@@ -118,18 +134,26 @@ export function EditableGenresRow({
               No genres selected
             </span>
           ) : (
-            selectedGenres.map((g) => (
-              <button
-                key={g}
-                type="button"
-                onClick={() => removeGenre(g)}
-                className="inline-flex items-center gap-1 rounded-base border-2 border-main bg-main/10 px-2 py-0.5 text-xs font-heading hover:bg-main/20"
-                title="Click to remove"
-              >
-                {g}
-                <span aria-hidden className="text-foreground/60">×</span>
-              </button>
-            ))
+            selectedGenres.map((g) => {
+              const isNew = !currentKeys.has(key(g));
+              return (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => removeGenre(g)}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-base border-2 px-2 py-0.5 text-xs font-heading transition-colors",
+                    isNew
+                      ? "border-main bg-main/10 hover:bg-main/20"
+                      : "border-border bg-background-secondary hover:border-main/60",
+                  )}
+                  title={isNew ? "New — click to remove" : "Already on track — click to remove"}
+                >
+                  {g}
+                  <span aria-hidden className="text-foreground/60">×</span>
+                </button>
+              );
+            })
           )}
         </div>
 

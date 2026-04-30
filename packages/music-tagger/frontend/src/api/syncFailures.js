@@ -6,12 +6,14 @@ import { apiJson } from "./client.js";
  * @param {Object} options - Query options
  * @param {string} [options.operation] - Filter by operation type (bulk_scan, bulk_sync_plex, bulk_sync_files)
  * @param {number} [options.limit=50] - Maximum failures to return
+ * @param {string} [options.search] - Substring match on album title/artist or error text
  * @returns {Promise<Object>} Response with failures array
  */
-export async function fetchSyncFailures({ operation = null, limit = 50 } = {}) {
+export async function fetchSyncFailures({ operation = null, limit = 50, search = null } = {}) {
   const params = new URLSearchParams();
   if (operation) params.set("operation", operation);
   if (limit) params.set("limit", limit.toString());
+  if (search) params.set("q", search);
 
   const queryString = params.toString();
   return apiJson(`/sync-failures${queryString ? `?${queryString}` : ""}`);

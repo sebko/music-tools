@@ -23,6 +23,35 @@ export async function fetchCachedEnrichments(filePaths) {
   return response.json();
 }
 
+export async function fetchClaudeForTrack(operationId, filePath) {
+  const response = await fetch(
+    `${API_BASE}/inbox/import/${encodeURIComponent(operationId)}/claude-enrich`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filePath }),
+    },
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.error || "Failed to run Claude enrichment");
+  }
+  return response.json();
+}
+
+export async function fetchClaudeForTrackByPath(filePath) {
+  const response = await fetch(`${API_BASE}/tracks/enrich/claude`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filePath }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.error || "Failed to run Claude enrichment");
+  }
+  return response.json();
+}
+
 export async function applyEnrichment(filePath, fields) {
   const response = await fetch(`${API_BASE}/tracks/enrich/apply`, {
     method: "POST",

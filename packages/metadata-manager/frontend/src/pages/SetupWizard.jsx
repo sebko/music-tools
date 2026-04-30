@@ -988,8 +988,9 @@ const FINALISE_PHASES = [
   { id: "normalizingGenres", label: "Genre normalisation" },
   { id: "artwork", label: "Album art" },
   { id: "ftintitle", label: '"feat." into title' },
-  // scrubbing + replaygain temporarily removed — investigating FLAC
-  // audio-frame corruption. Re-add once the root cause is isolated.
+  // scrubbing + replaygain removed — both corrupt FLAC audio frames
+  // (upstream beets #2743). See ALL_PHASES comment in
+  // libraryProcessingPipeline.js for details.
 ];
 
 function StepFinalise({ onNext }) {

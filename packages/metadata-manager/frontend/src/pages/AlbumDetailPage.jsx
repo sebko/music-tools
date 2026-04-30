@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAlbumTracks, useGenreStatus } from "../hooks/useAlbums";
 import {
   PageLoader,
@@ -8,7 +9,8 @@ import {
   EmptyState,
   Button,
 } from "@dj-tools/my-component-library";
-import { ArrowLeft, Music } from "lucide-react";
+import { ArrowLeft, Music, Sparkles } from "lucide-react";
+import BulkGenreMatchStepper from "../components/BulkGenreMatchStepper";
 
 function formatDuration(seconds) {
   const mins = Math.floor(seconds / 60);
@@ -54,12 +56,30 @@ function uniqueValues(tracks, key) {
 function AlbumDetailPage() {
   const { name } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const albumName = decodeURIComponent(name);
   const { data, isLoading, isError } = useAlbumTracks(albumName);
 
   const tracks = data?.tracks || [];
   const trackIds = useMemo(() => data?.tracks?.map((t) => t.id) || [], [data?.tracks]);
   const { data: genreStatus, isLoading: genreStatusLoading } = useGenreStatus(trackIds);
+
+  const [isStepperOpen, setIsStepperOpen] = useState(false);
+  const stepperTracks = useMemo(
+    () =>
+      (data?.tracks || [])
+        .filter((t) => t.path)
+        .map((t) => ({ path: t.path })),
+    [data?.tracks],
+  );
+
+  const handleStepperClose = () => {
+    setIsStepperOpen(false);
+    // Refresh genre pills + any other album-derived state once the stepper
+    // closes, so any newly-written genres show up without a manual reload.
+    queryClient.invalidateQueries({ queryKey: ["albumTracks", albumName] });
+    queryClient.invalidateQueries({ queryKey: ["genreStatus"] });
+  };
 
   if (isLoading) {
     return <PageLoader message="Loading album..." />;
@@ -135,12 +155,27 @@ function AlbumDetailPage() {
 
   return (
     <div>
-      <div className="mb-6">
+      <div className="mb-6 flex items-center justify-between gap-3">
         <Button variant="secondary" size="sm" onClick={() => navigate("/")}>
           <ArrowLeft className="h-4 w-4" />
           Back
         </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => setIsStepperOpen(true)}
+          disabled={stepperTracks.length === 0}
+        >
+          <Sparkles className="h-4 w-4" />
+          Bulk genre match
+        </Button>
       </div>
+
+      <BulkGenreMatchStepper
+        tracks={stepperTracks}
+        isOpen={isStepperOpen}
+        onClose={handleStepperClose}
+      />
 
       <DetailLayout
         sidebar={

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -36,8 +36,8 @@ const PHASE_LABELS = {
   checking: "Checking file integrity",
   tagging: "Normalizing tags",
   scrubbing: "Scrubbing legacy tag frames",
-  enriching: "Enriching metadata via Claude AI",
-  "awaiting-enrichment-review": "Review Claude suggestions",
+  enriching: "Fetching last.fm genre suggestions",
+  "awaiting-enrichment-review": "Review metadata suggestions",
   artwork: "Embedding artwork",
   ftintitle: "Cleaning featured artists",
   replaygain: "Computing loudness (ReplayGain)",
@@ -102,8 +102,20 @@ function InboxPage() {
     }
   }, [isAwaitingDuplicateReview, operation?.duplicateMatches]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Holds an imperative handle for each EnrichmentCard rendered below, so
+  // "Continue import" can apply any unsaved selections before resuming the
+  // post-enrichment phases. Indexed by reviewableResults order.
+  const cardRefs = useRef([]);
+
   const resumeMutation = useMutation({
-    mutationFn: () => resumeInboxImport(operationId),
+    mutationFn: async () => {
+      await Promise.all(
+        cardRefs.current
+          .filter(Boolean)
+          .map((card) => card.applyIfNeeded()),
+      );
+      return resumeInboxImport(operationId);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["operation", operationId] });
     },
@@ -256,16 +268,22 @@ function InboxPage() {
         {isAwaitingReview && (
           <div className="space-y-4">
             <p className="text-sm text-foreground/70">
-              Claude proposed updates for {reviewableResults.length} track
-              {reviewableResults.length === 1 ? "" : "s"}. Toggle the fields you
-              want and click <strong>Apply</strong> on each card, then continue
-              the import.
+              Review metadata for {reviewableResults.length} track
+              {reviewableResults.length === 1 ? "" : "s"}. Last.fm genre
+              suggestions are shown by default; click <strong>AI genre scan</strong>
+              {" "}on any card to pull richer suggestions from Claude. Edit
+              fields and genres as needed — your selections will be written
+              automatically when you click <strong>Apply &amp; continue import</strong>.
             </p>
             <div className="space-y-4">
-              {reviewableResults.map((r) => (
+              {reviewableResults.map((r, i) => (
                 <EnrichmentCard
                   key={r.filePath}
+                  ref={(el) => {
+                    cardRefs.current[i] = el;
+                  }}
                   result={r}
+                  operationId={operationId}
                   inboxPath={operation?.inboxPath || inboxPath || ""}
                 />
               ))}
@@ -288,7 +306,7 @@ function InboxPage() {
                 ) : (
                   <Play className="w-4 h-4" />
                 )}
-                Continue import
+                Apply &amp; continue import
               </Button>
             </div>
           </div>

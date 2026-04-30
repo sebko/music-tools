@@ -13,6 +13,8 @@ import { promisify } from "util";
 import { fetchImage, embedArtworkToFile } from "./artwork/artworkManager.js";
 import { captureTimestamps, restoreTimestamps } from "./timestamps.js";
 import { computeAudioStreamHash } from "./audioIntegrity.js";
+import { recoverMP3Tags } from "./id3Recovery.js";
+import { basename } from "path";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -226,24 +228,36 @@ async function writeTagsM4A(filePath, tags) {
 }
 
 /**
- * Write ID3 tags to an MP3 file using node-id3
+ * Write ID3 tags to an MP3 file using node-id3.
  *
- * Handles files with malformed GEOB frames (e.g., from Serato DJ software)
- * by filtering out frames missing required encapsulatedObject before writing.
+ * Handles two categories of malformation seen in the wild:
+ *   1. Malformed GEOB frames (e.g. from Serato) — filtered after
+ *      a successful read.
+ *   2. Malformed frame-size fields that make NodeID3.read() throw
+ *      outright. When that happens we fall back to ffmpeg-based
+ *      permissive recovery (see id3Recovery.js), then let
+ *      NodeID3.write() rebuild the tag region from scratch. It's
+ *      safe because write() strips the old tag positionally via
+ *      the outer 10-byte ID3v2 header — never touching audio.
  *
  * @param {string} filePath - Full path to MP3 file
  * @param {Object} tags - Object with ID3 tag names and values
+ * @returns {Promise<{ success: true, repaired: boolean }>}
  */
-function writeID3TagsMP3(filePath, tags) {
-  // Read existing tags first. Some MP3s (notably Serato-tagged files)
-  // have malformed ID3 frames that make node-id3tag throw on read;
-  // fail early with a clear message so the outer loop records the
-  // file as failed without ever attempting a write.
+async function writeID3TagsMP3(filePath, tags) {
   let existingTags;
+  let repaired = false;
   try {
     existingTags = NodeID3.read(filePath) || {};
   } catch (readErr) {
-    throw new Error(`Unparseable ID3 tags: ${readErr.message}`);
+    const recovery = await recoverMP3Tags(filePath);
+    existingTags = recovery.tags;
+    repaired = true;
+    console.warn(
+      `   🔧 Repaired malformed ID3 in ${basename(filePath)} ` +
+      `(recovered ${recovery.recoveredKeys.length} field(s)` +
+      `${recovery.hasArt ? " + album art" : ""}; original read error: ${readErr.message})`
+    );
   }
 
   // Filter out malformed GEOB frames (missing encapsulatedObject)
@@ -268,6 +282,8 @@ function writeID3TagsMP3(filePath, tags) {
   if (success !== true) {
     throw new Error(success?.message || "Failed to write ID3 tags");
   }
+
+  return { success: true, repaired };
 }
 
 /**
@@ -397,6 +413,7 @@ export async function writePlexMetadataToFiles(albumPath, plexAlbum, selectedFie
     // Write tags to each audio file
     let filesUpdated = 0;
     let filesFailed = 0;
+    let filesRepaired = 0;
     const errors = [];
     const corruptedFiles = [];
     let aborted = false;
@@ -451,7 +468,8 @@ export async function writePlexMetadataToFiles(albumPath, plexAlbum, selectedFie
           } else if (format === "m4a") {
             await writeTagsM4A(filePath, tags);
           } else {
-            writeID3TagsMP3(filePath, tags);
+            const mp3Result = await writeID3TagsMP3(filePath, tags);
+            if (mp3Result.repaired) filesRepaired++;
           }
         }
 
@@ -508,20 +526,21 @@ export async function writePlexMetadataToFiles(albumPath, plexAlbum, selectedFie
 
     const overallSuccess = filesUpdated > 0 && filesFailed === 0 && corruptedFiles.length === 0;
 
-    console.log(`\n   Summary: ${filesUpdated} updated, ${filesFailed} failed${corruptedFiles.length > 0 ? `, ${corruptedFiles.length} CORRUPTED` : ""}`);
+    console.log(`\n   Summary: ${filesUpdated} updated, ${filesFailed} failed${filesRepaired > 0 ? `, ${filesRepaired} repaired` : ""}${corruptedFiles.length > 0 ? `, ${corruptedFiles.length} CORRUPTED` : ""}`);
 
     return {
       success: overallSuccess,
       filesProcessed: audioFiles.length,
       filesUpdated,
       filesFailed,
+      filesRepaired,
       corruptedFiles,
       aborted,
       errors: errors.length > 0 ? errors : undefined,
       message: corruptedFiles.length > 0
         ? `CORRUPTION DETECTED in ${corruptedFiles.length} file(s); album sync aborted`
         : overallSuccess
-          ? `Successfully updated ${filesUpdated} files`
+          ? `Successfully updated ${filesUpdated} files${filesRepaired > 0 ? ` (${filesRepaired} with malformed tags repaired)` : ""}`
           : filesFailed === audioFiles.length
             ? "Failed to update any files"
             : `Partially successful: ${filesUpdated} updated, ${filesFailed} failed`,
@@ -534,6 +553,7 @@ export async function writePlexMetadataToFiles(albumPath, plexAlbum, selectedFie
       filesProcessed: 0,
       filesUpdated: 0,
       filesFailed: 0,
+      filesRepaired: 0,
     };
   }
 }

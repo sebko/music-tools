@@ -27,6 +27,7 @@ function BulkSyncToFilesProgressModal({ isOpen, onClose, onComplete }) {
     total: 0,
     synced: 0,
     failed: 0,
+    repaired: 0,
     currentAlbum: null,
     error: null,
     corrupted: 0,
@@ -35,6 +36,9 @@ function BulkSyncToFilesProgressModal({ isOpen, onClose, onComplete }) {
   };
 
   const hasCorruption = (progressData.corruptedFiles?.length || 0) > 0;
+  const hasRepairs = (progressData.repaired || 0) > 0;
+  const statColumns =
+    3 + (hasCorruption || progressData.corrupted > 0 ? 1 : 0) + (hasRepairs ? 1 : 0);
 
   // Calculate progress percentage
   const progressPercent =
@@ -165,7 +169,15 @@ function BulkSyncToFilesProgressModal({ isOpen, onClose, onComplete }) {
       {/* Stats */}
       {progressData.total > 0 && (
         <div className="mb-4 text-sm text-foreground/60">
-          <div className={`grid ${hasCorruption || progressData.corrupted > 0 ? "grid-cols-4" : "grid-cols-3"} gap-4`}>
+          <div
+            className={`grid gap-4 ${
+              statColumns === 5
+                ? "grid-cols-5"
+                : statColumns === 4
+                  ? "grid-cols-4"
+                  : "grid-cols-3"
+            }`}
+          >
             <div>
               <span className="block font-heading">Total</span>
               <span>{progressData.total.toLocaleString()}</span>
@@ -182,6 +194,14 @@ function BulkSyncToFilesProgressModal({ isOpen, onClose, onComplete }) {
                 {progressData.failed.toLocaleString()}
               </span>
             </div>
+            {hasRepairs && (
+              <div>
+                <span className="block font-heading">Repaired</span>
+                <span className="text-amber-600">
+                  {progressData.repaired.toLocaleString()}
+                </span>
+              </div>
+            )}
             {(hasCorruption || progressData.corrupted > 0) && (
               <div>
                 <span className="block font-heading">Corrupted</span>

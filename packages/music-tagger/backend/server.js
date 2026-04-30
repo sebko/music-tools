@@ -93,6 +93,7 @@ let bulkSyncToFilesState = {
   total: 0,
   synced: 0,
   failed: 0,
+  repaired: 0,
   currentAlbum: null,
   shouldStop: false,
   error: null,
@@ -765,6 +766,7 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
       total: 0,
       synced: 0,
       failed: 0,
+      repaired: 0,
       currentAlbum: null,
       shouldStop: false,
       error: null,
@@ -865,7 +867,8 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
             });
 
             bulkSyncToFilesState.synced++;
-            console.log(`   ✅ Synced ${writeResult.filesUpdated} files successfully`);
+            bulkSyncToFilesState.repaired += writeResult.filesRepaired || 0;
+            console.log(`   ✅ Synced ${writeResult.filesUpdated} files successfully${writeResult.filesRepaired ? ` (${writeResult.filesRepaired} repaired)` : ""}`);
 
             // Add delay between syncs to avoid overwhelming file system
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -2269,8 +2272,9 @@ app.get("/api/sync-failures", async (req, res) => {
   try {
     const operation = req.query.operation || null;
     const limit = parseInt(req.query.limit) || 50;
+    const search = (req.query.q || "").trim() || null;
 
-    const failures = await getRecentFailures(operation, limit, req.activeLibrary);
+    const failures = await getRecentFailures(operation, limit, req.activeLibrary, search);
 
     res.json({
       success: true,
@@ -2396,10 +2400,14 @@ app.delete("/api/settings/plex/token", async (req, res) => {
       total: 0,
       synced: 0,
       failed: 0,
+      repaired: 0,
       currentAlbum: null,
       shouldStop: false,
       error: null,
       selectedFields: {},
+      corrupted: 0,
+      corruptedFiles: [],
+      halted: false,
     };
 
     // 3. Delete all albums (cascades to matches, fileSyncs, redactedSyncs, failures)

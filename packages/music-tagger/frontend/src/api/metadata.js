@@ -38,6 +38,22 @@ export async function searchAlbumMetadataSimple(albumId, query, services = [REDA
 }
 
 /**
+ * Match an album to a metadata service's release group (no metadata
+ * write yet — just records the match so a later sync can apply it).
+ *
+ * @param {number} albumId
+ * @param {{ service: string, groupId: string|number }} payload
+ * @returns {Promise<Object>}
+ */
+export async function matchAlbumMetadata(albumId, { service, groupId }) {
+  return apiJson(`/albums/${albumId}/metadata/match`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ service, groupId }),
+  });
+}
+
+/**
  * Start bulk metadata scan for albums
  * @param {number} minConfidence - Minimum confidence threshold (default: 85)
  * @param {boolean} includeMatched - Include already-matched albums (default: false)

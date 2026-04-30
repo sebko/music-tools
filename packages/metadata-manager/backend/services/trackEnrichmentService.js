@@ -9,6 +9,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
 import { writeGenres } from "./genreWriter.js";
+import { logLastfm, logClaude } from "./scanResultLog.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -147,10 +148,14 @@ function buildUserPrompt(tracks) {
     lines.push(`Filename: ${t.filename}`);
     if (t.artist) lines.push(`Artist: ${t.artist}`);
     if (t.title) lines.push(`Title: ${t.title}`);
-    if (t.album) lines.push(`Album: ${t.album}`);
-    if (t.label) lines.push(`Label: ${t.label}`);
+    // Intentionally omit Album, Label, and Genre. In this library:
+    // - Album is always the chronological singles folder (e.g.
+    //   "Singles - 2026-04 April"), which misleads Claude into searching
+    //   for an album that doesn't exist.
+    // - Label and Genre are commonly legacy/garbage values from prior
+    //   tagging passes and bias the response. The scan exists to propose
+    //   new ones, not to confirm old ones.
     if (t.year) lines.push(`Year: ${t.year}`);
-    if (t.genres?.length) lines.push(`Genre: ${t.genres.join(", ")}`);
     if (t.format) lines.push(`Format: ${t.format}`);
     if (t.duration) lines.push(`Duration: ${t.duration}`);
     if (t.bpm) lines.push(`BPM: ${t.bpm}`);
@@ -201,18 +206,127 @@ async function callClaude(tracks) {
 
   console.log(`[enrichment] Extracted text length=${text.length}, first 200 chars: ${text.slice(0, 200)}`);
 
-  // Strip markdown fencing if present
-  const cleaned = text.replace(/^```(?:json)?\s*\n?/m, "").replace(/\n?```\s*$/m, "").trim();
+  // Claude sometimes prefixes the JSON with prose ("Based on the search
+  // results, here's the data:") or wraps it in ```json fences. Grab the
+  // outermost bracketed array/object rather than trusting the whole string.
+  const cleaned = extractJson(text);
   return JSON.parse(cleaned);
+}
+
+function extractJson(text) {
+  const trimmed = text.trim();
+
+  // Prefer fenced code blocks (```json ... ``` or ``` ... ```) — when
+  // present these are unambiguous.
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) return fenceMatch[1].trim();
+
+  // Otherwise scan for every top-level balanced bracket/brace span. Claude's
+  // prose sometimes contains incidental brackets like `[PROD. BY 4LIENS]`
+  // which the old "first [ to last ]" heuristic would gleefully concatenate
+  // with the real JSON further down. Track string state so brackets inside
+  // string literals don't shift depth.
+  const spans = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "[" || ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "]" || ch === "}") {
+      if (depth > 0) {
+        depth--;
+        if (depth === 0 && start >= 0) {
+          spans.push(trimmed.slice(start, i + 1));
+          start = -1;
+        }
+      }
+    }
+  }
+
+  if (spans.length === 0) {
+    throw new Error(`No JSON found in Claude response: ${trimmed.slice(0, 200)}`);
+  }
+
+  // Pick the longest span that parses. The real Claude payload is almost
+  // always the largest bracket block; the parse check ensures incidental
+  // prose-brackets don't slip through if they happen to be longer.
+  spans.sort((a, b) => b.length - a.length);
+  for (const span of spans) {
+    try {
+      JSON.parse(span);
+      return span;
+    } catch {
+      // try next candidate
+    }
+  }
+  // None parsed — return the longest so the upstream JSON.parse throws with
+  // a concrete error message.
+  return spans[0];
 }
 
 // ── Public API ──────────────────────────────────────────────────────────
 
-const BATCH_SIZE = 8;
+function buildCurrent(meta) {
+  return {
+    artist: meta.artist,
+    title: meta.title,
+    album: meta.album,
+    label: meta.label,
+    year: meta.year,
+    genres: meta.genres,
+    bpm: meta.bpm,
+    initialKey: meta.initialKey,
+  };
+}
+
+function emptyProposed(lastgenreGenres) {
+  return {
+    artist: null,
+    title: null,
+    label: null,
+    year: null,
+    genres: [],
+    lastgenreGenres: lastgenreGenres || [],
+    bpm: null,
+    initialKey: null,
+    proposedFilename: null,
+  };
+}
+
+function proposedFromClaude(claudeResult, lastgenreGenres) {
+  return {
+    artist: claudeResult.artist || null,
+    title: claudeResult.title || null,
+    label: claudeResult.label || null,
+    year: claudeResult.year || null,
+    genres: claudeResult.genres || [],
+    lastgenreGenres: lastgenreGenres || [],
+    bpm: claudeResult.bpm || null,
+    initialKey: claudeResult.initialKey || null,
+    proposedFilename: claudeResult.proposedFilename || null,
+  };
+}
 
 /**
- * Enrich metadata for a list of file paths using Claude.
+ * Prepare enrichment entries for a list of file paths.
+ * Reads metadata + last.fm genre suggestions only — Claude is NOT called here.
  * Returns { results: [{ filePath, status, current, proposed, confidence }] }
+ * where proposed carries only `lastgenreGenres` until the user triggers an AI
+ * scan via enrichSingleTrackWithClaude.
  */
 export async function enrichTracks(filePaths) {
   evictExpired();
@@ -220,7 +334,6 @@ export async function enrichTracks(filePaths) {
   const results = [];
   const toEnrich = [];
 
-  // Check cache first
   for (const filePath of filePaths) {
     try {
       const fileStat = await stat(filePath);
@@ -236,94 +349,75 @@ export async function enrichTracks(filePaths) {
     }
   }
 
-  // Kick off last.fm genre fetching in parallel with Claude. The helper
-  // script talks to last.fm per-track and can easily take 5-15s total for
-  // a normal batch, so we start it before entering the Claude loop and
-  // await it lazily when we're ready to build each entry.
   const lastgenrePromise = fetchLastgenreSuggestions(toEnrich);
-  let lastgenreMap = null;
 
-  // Process uncached files in batches
-  for (let i = 0; i < toEnrich.length; i += BATCH_SIZE) {
-    const batch = toEnrich.slice(i, i + BATCH_SIZE);
-
-    // Read metadata for the batch
-    const metadataMap = new Map();
-    for (const filePath of batch) {
-      try {
-        const meta = await readFileMetadata(filePath);
-        metadataMap.set(filePath, meta);
-      } catch (err) {
-        results.push({ filePath, status: "error", error: `Failed to read metadata: ${err.message}` });
-      }
-    }
-
-    const tracksWithData = batch.filter((fp) => metadataMap.has(fp));
-    if (tracksWithData.length === 0) continue;
-
-    // Call Claude
+  const metadataMap = new Map();
+  for (const filePath of toEnrich) {
     try {
-      const claudeInput = tracksWithData.map((fp) => metadataMap.get(fp));
-      const claudeResults = await callClaude(claudeInput);
-
-      // Resolve the lastgenre results once — cheap after the first await.
-      if (lastgenreMap === null) lastgenreMap = await lastgenrePromise;
-
-      // Claude should return one result per input track
-      for (let j = 0; j < tracksWithData.length; j++) {
-        const filePath = tracksWithData[j];
-        const meta = metadataMap.get(filePath);
-        const proposed = claudeResults[j];
-
-        if (!proposed) {
-          results.push({ filePath, status: "error", error: "No result from Claude" });
-          continue;
-        }
-
-        const current = {
-          artist: meta.artist,
-          title: meta.title,
-          album: meta.album,
-          label: meta.label,
-          year: meta.year,
-          genres: meta.genres,
-          bpm: meta.bpm,
-          initialKey: meta.initialKey,
-        };
-
-        const entry = {
-          filePath,
-          status: "success",
-          current,
-          proposed: {
-            artist: proposed.artist || null,
-            title: proposed.title || null,
-            label: proposed.label || null,
-            year: proposed.year || null,
-            genres: proposed.genres || [],
-            lastgenreGenres: lastgenreMap.get(filePath) || [],
-            bpm: proposed.bpm || null,
-            initialKey: proposed.initialKey || null,
-            proposedFilename: proposed.proposedFilename || null,
-          },
-          confidence: proposed.confidence || "low",
-        };
-
-        results.push(entry);
-
-        // Cache the result
-        const key = cacheKey(filePath, meta.mtimeMs);
-        cache.set(key, { result: entry, cachedAt: Date.now() });
-      }
+      metadataMap.set(filePath, await readFileMetadata(filePath));
     } catch (err) {
-      // Claude API failure — mark all tracks in batch as errors
-      for (const filePath of tracksWithData) {
-        results.push({ filePath, status: "error", error: `Claude API error: ${err.message}` });
-      }
+      results.push({
+        filePath,
+        status: "error",
+        error: `Failed to read metadata: ${err.message}`,
+      });
     }
   }
 
+  const lastgenreMap = await lastgenrePromise;
+
+  for (const filePath of toEnrich) {
+    const meta = metadataMap.get(filePath);
+    if (!meta) continue;
+    const lastgenreGenres = lastgenreMap.get(filePath);
+    const entry = {
+      filePath,
+      status: "success",
+      current: buildCurrent(meta),
+      proposed: emptyProposed(lastgenreGenres),
+      confidence: "low",
+    };
+    results.push(entry);
+    cache.set(cacheKey(filePath, meta.mtimeMs), {
+      result: entry,
+      cachedAt: Date.now(),
+    });
+    void logLastfm(filePath, meta.mtimeMs, lastgenreGenres);
+  }
+
   return { results };
+}
+
+/**
+ * Run Claude against a single file and return a `proposed`-shaped object.
+ * Merges Claude's scalar suggestions with any existing last.fm genres so the
+ * returned object is ready to drop into the existing enrichment UI.
+ * Also updates the in-memory cache so repeat clicks are no-ops.
+ */
+export async function enrichSingleTrackWithClaude(filePath) {
+  const meta = await readFileMetadata(filePath);
+  const claudeResults = await callClaude([meta]);
+  const claudeResult = claudeResults?.[0];
+  if (!claudeResult) {
+    throw new Error("No result from Claude");
+  }
+
+  const key = cacheKey(filePath, meta.mtimeMs);
+  const cached = cache.get(key)?.result;
+  const lastgenreGenres = cached?.proposed?.lastgenreGenres || [];
+  const proposed = proposedFromClaude(claudeResult, lastgenreGenres);
+
+  const entry = {
+    filePath,
+    status: "success",
+    current: cached?.current || buildCurrent(meta),
+    proposed,
+    confidence: claudeResult.confidence || "low",
+  };
+  cache.set(key, { result: entry, cachedAt: Date.now() });
+  void logClaude(filePath, meta.mtimeMs, proposed, entry.confidence);
+
+  return { proposed, confidence: entry.confidence };
 }
 
 /**

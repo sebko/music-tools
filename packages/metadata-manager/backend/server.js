@@ -18,7 +18,12 @@ import {
   resumeInboxImport,
   resumeInboxImportAfterDuplicateReview,
 } from "./services/inboxImportRunner.js";
-import { enrichTracks, getCachedEnrichments, applyEnrichment } from "./services/trackEnrichmentService.js";
+import {
+  enrichTracks,
+  enrichSingleTrackWithClaude,
+  getCachedEnrichments,
+  applyEnrichment,
+} from "./services/trackEnrichmentService.js";
 import { checkGenreFormat } from "./services/genreFormatChecker.js";
 
 // Load .env from local backend dir first, then fall back to monorepo root.
@@ -383,6 +388,31 @@ app.post("/api/tracks/enrich/apply", async (req, res) => {
   } catch (error) {
     console.error("Error applying enrichment:", error);
     res.status(500).json({ error: error.message || "Failed to apply enrichment" });
+  }
+});
+
+// Per-track Claude scan that doesn't require an inbox operationId. The inbox
+// flow has its own claude-enrich route guarded by the operations map; this
+// one accepts any library/inbox path so the album-page bulk stepper (and
+// future library-wide scan) can reuse the same Claude pipeline.
+app.post("/api/tracks/enrich/claude", async (req, res) => {
+  try {
+    const { filePath } = req.body || {};
+    if (!filePath) {
+      return res.status(400).json({ error: "filePath is required" });
+    }
+    const inboxPath = await getInboxPath().catch(() => null);
+    const libraryPath = await getSetting("musicLibraryPath").catch(() => null);
+    const abs = resolvePath(filePath);
+    const allowed = [inboxPath, libraryPath].filter(Boolean).map((p) => resolvePath(p));
+    if (allowed.length > 0 && !allowed.some((root) => abs.startsWith(root + "/") || abs === root)) {
+      return res.status(403).json({ error: "File is outside allowed paths" });
+    }
+    const { proposed, confidence } = await enrichSingleTrackWithClaude(filePath);
+    res.json({ proposed, confidence });
+  } catch (error) {
+    console.error("Error running per-track Claude enrich:", error);
+    res.status(500).json({ error: error.message || "Failed to run Claude enrich" });
   }
 });
 
@@ -859,6 +889,45 @@ app.post("/api/inbox/import/:id/resume", (req, res) => {
   } catch (error) {
     console.error("Error resuming inbox import:", error);
     res.status(500).json({ error: error.message || "Failed to resume import" });
+  }
+});
+
+// Run Claude on a single track mid-review. Called when the user clicks
+// "AI genre scan" on an EnrichmentCard — the default enrichment only fetches
+// last.fm suggestions to avoid spending tokens on every track. Response
+// carries a full `proposed` object; the frontend merges the genres into the
+// existing last.fm pill list via mergeGenres.
+app.post("/api/inbox/import/:id/claude-enrich", async (req, res) => {
+  const op = operations.get(req.params.id);
+  if (!op) return res.status(404).json({ error: "Operation not found" });
+  if (op.status !== "awaiting_review") {
+    return res.status(400).json({
+      error: `Operation is not awaiting review (status=${op.status})`,
+    });
+  }
+  const { filePath } = req.body || {};
+  if (!filePath || typeof filePath !== "string") {
+    return res.status(400).json({ error: "filePath is required" });
+  }
+  const knownFile = (op.enrichmentResults || []).some(
+    (r) => r.filePath === filePath,
+  );
+  if (!knownFile) {
+    return res
+      .status(400)
+      .json({ error: "filePath is not part of this operation's review set" });
+  }
+  try {
+    const { proposed, confidence } = await enrichSingleTrackWithClaude(filePath);
+    const entry = op.enrichmentResults.find((r) => r.filePath === filePath);
+    if (entry) {
+      entry.proposed = proposed;
+      entry.confidence = confidence;
+    }
+    res.json({ proposed, confidence });
+  } catch (error) {
+    console.error("Error running Claude for single track:", error);
+    res.status(500).json({ error: error.message || "Claude enrichment failed" });
   }
 });
 
