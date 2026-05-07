@@ -9,8 +9,9 @@ import {
   EmptyState,
   Button,
 } from "@dj-tools/my-component-library";
-import { ArrowLeft, Music, Sparkles } from "lucide-react";
+import { ArrowLeft, Music, Sparkles, Zap } from "lucide-react";
 import BulkGenreMatchStepper from "../components/BulkGenreMatchStepper";
+import AutoGenreMatchRunner from "../components/AutoGenreMatchRunner";
 
 function formatDuration(seconds) {
   const mins = Math.floor(seconds / 60);
@@ -65,6 +66,7 @@ function AlbumDetailPage() {
   const { data: genreStatus, isLoading: genreStatusLoading } = useGenreStatus(trackIds);
 
   const [isStepperOpen, setIsStepperOpen] = useState(false);
+  const [isAutoOpen, setIsAutoOpen] = useState(false);
   const stepperTracks = useMemo(
     () =>
       (data?.tracks || [])
@@ -73,12 +75,19 @@ function AlbumDetailPage() {
     [data?.tracks],
   );
 
-  const handleStepperClose = () => {
-    setIsStepperOpen(false);
-    // Refresh genre pills + any other album-derived state once the stepper
-    // closes, so any newly-written genres show up without a manual reload.
+  const refreshAlbum = () => {
     queryClient.invalidateQueries({ queryKey: ["albumTracks", albumName] });
     queryClient.invalidateQueries({ queryKey: ["genreStatus"] });
+  };
+
+  const handleStepperClose = () => {
+    setIsStepperOpen(false);
+    refreshAlbum();
+  };
+
+  const handleAutoClose = () => {
+    setIsAutoOpen(false);
+    refreshAlbum();
   };
 
   if (isLoading) {
@@ -160,21 +169,38 @@ function AlbumDetailPage() {
           <ArrowLeft className="h-4 w-4" />
           Back
         </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => setIsStepperOpen(true)}
-          disabled={stepperTracks.length === 0}
-        >
-          <Sparkles className="h-4 w-4" />
-          Bulk genre match
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => setIsStepperOpen(true)}
+            disabled={stepperTracks.length === 0}
+          >
+            <Sparkles className="h-4 w-4" />
+            Match genres (interactive)
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setIsAutoOpen(true)}
+            disabled={stepperTracks.length === 0}
+          >
+            <Zap className="h-4 w-4" />
+            Match genres (auto)
+          </Button>
+        </div>
       </div>
 
       <BulkGenreMatchStepper
         tracks={stepperTracks}
         isOpen={isStepperOpen}
         onClose={handleStepperClose}
+      />
+
+      <AutoGenreMatchRunner
+        tracks={stepperTracks}
+        isOpen={isAutoOpen}
+        onClose={handleAutoClose}
       />
 
       <DetailLayout

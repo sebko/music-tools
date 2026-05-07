@@ -1,11 +1,22 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import {
   MetadataRow,
   EditableGenresRow,
   Button,
 } from "@dj-tools/my-component-library";
 import { Check, AlertCircle, Loader, Sparkles } from "lucide-react";
-import { applyEnrichment, fetchClaudeForTrack } from "../api/enrichment";
+import {
+  applyEnrichment,
+  enrichTracks,
+  fetchClaudeForTrack,
+  fetchClaudeForTrackByPath,
+} from "../api/enrichment";
 
 // Merge two genre lists into a deduped list (case-insensitive) preserving
 // the order of the first list.
@@ -33,41 +44,154 @@ const CONFIDENCE_LABELS = {
   low: "Low confidence",
 };
 
-// Scalar field checkboxes start unchecked — the user opts in to each.
-// Only the genre row defaults to selected, since it's pre-populated from
-// last.fm and (after AI scan) Claude, so most users will want it written.
 function defaultSelection() {
   return { genre: true };
 }
 
+function basename(filePath) {
+  if (!filePath) return "";
+  return filePath.split("/").pop() || filePath;
+}
+
 /**
- * Card showing current vs proposed metadata for a single track.
- * Uses MetadataRow and GenreStylesRow from the shared component library
- * to match the music-tagger diff view style.
+ * Outer card wrapper. Two modes:
  *
- * Default proposed state comes from last.fm only (see trackEnrichmentService
- * — auto-Claude is disabled to save tokens). The "AI genre scan" button
- * below the genre row triggers a single-track Claude call that fills in the
- * rest of the proposed fields and merges Claude's genres into the pill list.
+ *   1. **Eager** — caller passes a fully-populated `result` (existing inbox
+ *      flow). Renders the body immediately.
+ *   2. **Lazy** — caller passes `lazyFilePath` + `isActive` (+ optional
+ *      `runAiOnLoad`). The card stays as a skeleton until `isActive`
+ *      flips true, at which point it fetches its own enrichment via
+ *      `enrichTracks([path])` and, if `runAiOnLoad`, also fires Claude.
  *
- * @param {Object} props
- * @param {Object} props.result - Enrichment result with current/proposed/confidence
- * @param {string} [props.operationId] - Inbox import operation ID (legacy inbox flow)
- * @param {string} [props.inboxPath] - Inbox root path used to shorten the display name
- * @param {Function} [props.onClaudeScan] - (filePath) => { proposed, confidence }.
- *     When provided, used instead of the inbox-bound fetchClaudeForTrack so the
- *     card works outside the inbox flow (album bulk match, future library scan).
- * @param {Function} [props.onApplied] - Callback after successful apply
- * @param {Object} [props.initialAiScanned] - { proposed, confidence } from an
- *     orchestrator that ran the Claude scan upfront. When provided, the card
- *     mounts with `AI scanned` already showing and Claude's genres pre-merged.
+ * `applyIfNeeded` is forwarded through to the inner body so the parent
+ * stepper's "Approve & next" still works the same way.
  */
 const EnrichmentCard = forwardRef(function EnrichmentCard(
+  {
+    result: propResult,
+    lazyFilePath,
+    isActive,
+    runAiOnLoad,
+    operationId,
+    inboxPath,
+    onClaudeScan,
+    onApplied,
+    initialAiScanned,
+  },
+  ref,
+) {
+  const [resolvedResult, setResolvedResult] = useState(propResult || null);
+  const [resolvedAi, setResolvedAi] = useState(initialAiScanned || null);
+  const [loadState, setLoadState] = useState(propResult ? "loaded" : "idle");
+  const [loadError, setLoadError] = useState(null);
+  const fetchedRef = useRef(!!propResult);
+  const bodyRef = useRef(null);
+
+  useEffect(() => {
+    if (propResult) return;
+    if (!lazyFilePath) return;
+    if (!isActive) return;
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+
+    let cancelled = false;
+    (async () => {
+      setLoadState("loading");
+      setLoadError(null);
+      try {
+        const { results } = await enrichTracks([lazyFilePath]);
+        if (cancelled) return;
+        const r = results?.[0];
+        if (!r || r.status === "error") {
+          setLoadState("error");
+          setLoadError(r?.error || "Failed to load track");
+          return;
+        }
+        setResolvedResult(r);
+        setLoadState("loaded");
+        if (runAiOnLoad) {
+          try {
+            const ai = await fetchClaudeForTrackByPath(lazyFilePath);
+            if (!cancelled) setResolvedAi(ai);
+          } catch {
+            // Best-effort — user can still trigger AI scan from the card.
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadState("error");
+          setLoadError(err.message);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [propResult, lazyFilePath, isActive, runAiOnLoad]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      async applyIfNeeded() {
+        if (!bodyRef.current) return;
+        await bodyRef.current.applyIfNeeded();
+      },
+    }),
+    [],
+  );
+
+  if (loadState === "idle" || loadState === "loading") {
+    return (
+      <div className="card-brutalist p-6 space-y-4">
+        <div className="font-mono text-sm text-foreground truncate" title={lazyFilePath}>
+          {basename(lazyFilePath)}
+        </div>
+        <div className="flex items-center gap-2 text-sm text-foreground/60">
+          <Loader className="w-4 h-4 animate-spin" />
+          {loadState === "loading"
+            ? "Loading metadata + last.fm…"
+            : "Waiting…"}
+        </div>
+      </div>
+    );
+  }
+
+  if (loadState === "error") {
+    return (
+      <div className="card-brutalist p-6 space-y-3 border-red-500/40">
+        <div className="font-mono text-sm text-foreground truncate" title={lazyFilePath}>
+          {basename(lazyFilePath)}
+        </div>
+        <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          {loadError || "Failed to load"}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <EnrichmentCardBody
+      ref={bodyRef}
+      result={resolvedResult}
+      operationId={operationId}
+      inboxPath={inboxPath}
+      onClaudeScan={onClaudeScan}
+      onApplied={onApplied}
+      initialAiScanned={resolvedAi || undefined}
+    />
+  );
+});
+
+/**
+ * Inner card body. Renders only once a fully-populated `result` is in hand,
+ * so the genre/scalar useState initializers can read `result.current` /
+ * `result.proposed` directly without null-guards.
+ */
+const EnrichmentCardBody = forwardRef(function EnrichmentCardBody(
   { result, operationId, inboxPath, onClaudeScan, onApplied, initialAiScanned },
   ref,
 ) {
-  // idle | loading | loaded | error. Seeded to "loaded" if an upstream
-  // orchestrator (e.g. BulkGenreMatchStepper eager mode) already ran Claude.
   const [aiState, setAiState] = useState(() =>
     initialAiScanned ? "loaded" : "idle",
   );
@@ -80,10 +204,6 @@ const EnrichmentCard = forwardRef(function EnrichmentCard(
 
   const [selectedFields, setSelectedFields] = useState(() => defaultSelection());
 
-  // Default: merge last.fm suggestions into the current genre list so the
-  // user's baseline selection already includes what last.fm proposed. If an
-  // upstream orchestrator pre-ran Claude, merge its genres on top too — same
-  // shape as a successful in-card scan.
   const [selectedGenres, setSelectedGenres] = useState(() => {
     const base = mergeGenres(
       result.current.genres || [],
@@ -94,7 +214,7 @@ const EnrichmentCard = forwardRef(function EnrichmentCard(
       : base;
   });
 
-  const [applyState, setApplyState] = useState("idle"); // idle | applying | applied | error
+  const [applyState, setApplyState] = useState("idle");
   const [applyError, setApplyError] = useState(null);
   const inFlightRef = useRef(null);
 
@@ -106,8 +226,6 @@ const EnrichmentCard = forwardRef(function EnrichmentCard(
         ? await onClaudeScan(result.filePath)
         : await fetchClaudeForTrack(operationId, result.filePath);
       setAiResult(claudeProposed);
-      // Don't auto-check scalar fields after an AI scan — keep the user-opt-in
-      // contract. The genre row stays checked because the merged list grew.
       setSelectedGenres((prev) => mergeGenres(prev, claudeProposed.genres || []));
       setAiState("loaded");
     } catch (err) {
@@ -132,9 +250,6 @@ const EnrichmentCard = forwardRef(function EnrichmentCard(
     if (selectedFields.bpm) fields.bpm = displayedProposed.bpm;
     if (selectedFields.initialKey) fields.initialKey = displayedProposed.initialKey;
 
-    // Write whatever the user has assembled in the genre editor — including
-    // the empty list, which clears genres on the track. Gated on the genre
-    // checkbox, and skipped if unchanged from the file's current state.
     if (selectedFields.genre) {
       const currentGenresKey = JSON.stringify(
         (result.current.genres || []).map((g) => g.toLowerCase()).sort(),
@@ -177,9 +292,6 @@ const EnrichmentCard = forwardRef(function EnrichmentCard(
     selectedGenres.map((g) => g.toLowerCase()).sort(),
   );
   const genresChanged = currentGenresKey !== selectedGenresKey;
-  // selectedFields.genre is the genre checkbox state, but it only counts as a
-  // pending change when the user has actually altered the list. Strip it out
-  // of the scalar tally so we don't double-count.
   const pendingFieldCount = Object.entries(selectedFields).filter(
     ([k, v]) => v && k !== "genre",
   ).length;
@@ -192,9 +304,6 @@ const EnrichmentCard = forwardRef(function EnrichmentCard(
   useImperativeHandle(
     ref,
     () => ({
-      // Called by InboxPage's "Continue import" so unapplied selections
-      // don't get silently dropped on the floor when the user skips the
-      // per-card Apply click.
       async applyIfNeeded() {
         if (inFlightRef.current) return inFlightRef.current;
         if (applyState === "applied") return;
@@ -202,16 +311,10 @@ const EnrichmentCard = forwardRef(function EnrichmentCard(
         await performApply();
       },
     }),
-    // performApply closes over selected* state; recreate the handle whenever
-    // those change so the parent always invokes the latest version.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [applyState, hasSelectedFields, selectedFields, selectedGenres, displayedProposed],
   );
 
-  // Single unified "Proposed" column: last.fm pills by default, with any
-  // AI genres merged in on top after the user clicks the scan button. The
-  // merge uses the existing mergeGenres helper so duplicates stay deduped
-  // case-insensitively.
   const remoteGenres = aiResult
     ? mergeGenres(proposed.lastgenreGenres || [], aiResult.genres || [])
     : (proposed.lastgenreGenres || []);
@@ -222,7 +325,6 @@ const EnrichmentCard = forwardRef(function EnrichmentCard(
 
   return (
     <div className="card-brutalist p-6 space-y-4">
-      {/* Header: filename + confidence + pending-change status */}
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="font-mono text-sm text-foreground truncate" title={displayName}>
@@ -264,9 +366,7 @@ const EnrichmentCard = forwardRef(function EnrichmentCard(
         </div>
       </div>
 
-      {/* Metadata comparison grid — matches music-tagger MatchMetadataPage */}
       <div className="grid grid-cols-[auto_auto_1fr_1fr] gap-x-4">
-        {/* Super header row: Current vs Proposed */}
         <div />
         <div />
         <div className="font-heading text-foreground text-sm text-center border-b-2 border-border pb-2 mb-2 bg-background-secondary/50">

@@ -44,10 +44,16 @@ async function fetchLastgenreSuggestions(filePaths) {
     return new Map();
   }
   try {
+    // Outer backstop only — the Python helper has a per-track 8s SIGALRM
+    // guard so one bad last.fm response can't drag the whole batch.
+    // 5s base for venv boot + 10s slack per file (the helper itself caps
+    // at 8s/track). For interactive single-file calls this resolves the
+    // card within ~15s instead of the previous 120s freeze.
+    const timeoutMs = 5_000 + filePaths.length * 10_000;
     const { stdout } = await execFileAsync(
       BEETS_VENV_PY,
       [LASTGENRE_SCRIPT, ...filePaths],
-      { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 },
+      { timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 },
     );
     const parsed = JSON.parse(stdout.trim() || "{}");
     const map = new Map();

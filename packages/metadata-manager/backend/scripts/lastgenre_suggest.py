@@ -18,10 +18,27 @@ No .write() or lib.store() calls — this is read-only.
 """
 
 import json
+import signal
 import sys
 
 from beets import config as beets_config
 from beets import library as beets_library
+
+
+# Hard cap on a single _get_genre() call. pylast's HTTP layer can hang
+# well past anything that feels reasonable in the interactive UI, and
+# one slow track was freezing the whole card for the outer 120 s budget.
+PER_TRACK_TIMEOUT_SECONDS = 8
+
+
+class LastfmTimeout(Exception):
+    pass
+
+
+def _alarm_handler(signum, frame):
+    raise LastfmTimeout(
+        f"last.fm call exceeded per-track budget ({PER_TRACK_TIMEOUT_SECONDS}s)"
+    )
 
 
 def main() -> int:
@@ -47,6 +64,8 @@ def main() -> int:
     lib = beets_library.Library(lib_path, directory)
     plugin = LastGenrePlugin()
 
+    signal.signal(signal.SIGALRM, _alarm_handler)
+
     suggestions: dict[str, list[str]] = {}
     for raw_path in paths:
         try:
@@ -56,7 +75,11 @@ def main() -> int:
             # the plugin still has artist/title to query last.fm with.
             items = list(lib.items(f'path:"{raw_path}"'))
             item = items[0] if items else beets_library.Item.from_path(raw_path)
-            genres, label = plugin._get_genre(item)
+            signal.alarm(PER_TRACK_TIMEOUT_SECONDS)
+            try:
+                genres, label = plugin._get_genre(item)
+            finally:
+                signal.alarm(0)
             if genres:
                 # _get_genre returns a semicolon-separated string-ish list in
                 # some beets versions and a real list in others. Normalize.
