@@ -1,6 +1,7 @@
 import { Link, useSearchParams } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { useAlbums } from "../hooks/useAlbums";
+import { useLibrary } from "../hooks/useLibrary";
 import { useLibraryScanManager } from "../hooks/useLibraryScanManager";
 import { useBulkMetadataScan } from "../hooks/useBulkMetadataScan";
 import { useBulkMetadataSync } from "../hooks/useBulkMetadataSync";
@@ -61,6 +62,8 @@ function AlbumsPage() {
   // Map quality filter to API params
   const artworkQuality = qualityFilter === "non-hd" ? "non-hd" : "";
   const syncCompleteness = qualityFilter === "incomplete" ? "incomplete" : "";
+
+  const { isSwitching } = useLibrary();
 
   const { data, isLoading, isError, error } = useAlbums(
     page,
@@ -242,7 +245,7 @@ function AlbumsPage() {
   // Check if database is being set up
   const isDatabaseSetup = isError && error?.requiresSetup;
 
-  if (isLoading || isDatabaseSetup) {
+  if (isLoading || isSwitching || isDatabaseSetup) {
     const message = isDatabaseSetup
       ? "Setting up database... This may take a moment."
       : "Loading albums...";
