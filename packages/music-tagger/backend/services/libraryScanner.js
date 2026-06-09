@@ -369,12 +369,49 @@ export async function scanPlexLibrary(libraryName = "Music") {
       }
     }
 
+    // Step 6: Reconcile stale matchStatus. An album is only promoted to
+    // MATCHED by a Redacted match (see recordMetadataMatch); MusicBrainz and
+    // other Plex-GUID services never set it. A MATCHED album with no Redacted
+    // match is therefore legacy/inconsistent data that is invisible in every
+    // filter tab (Unmatched excludes it, Matched requires a Redacted match), so
+    // restore it to UNMATCHED. SYNCED albums are intentionally left untouched.
+    let reconciledCount = 0;
+    if (!scanState.shouldStop) {
+      const matchedAlbums = await prisma.album.findMany({
+        where: { libraryName, matchStatus: "MATCHED" },
+        select: {
+          id: true,
+          metadataMatches: {
+            where: { metadataService: { name: "redacted" } },
+            select: { id: true },
+          },
+        },
+      });
+      const staleMatchedIds = matchedAlbums
+        .filter((a) => a.metadataMatches.length === 0)
+        .map((a) => a.id);
+
+      if (staleMatchedIds.length > 0) {
+        const CHUNK = 500;
+        for (let i = 0; i < staleMatchedIds.length; i += CHUNK) {
+          const result = await prisma.album.updateMany({
+            where: { libraryName, id: { in: staleMatchedIds.slice(i, i + CHUNK) } },
+            data: { matchStatus: "UNMATCHED" },
+          });
+          reconciledCount += result.count;
+        }
+        console.log(
+          `Reconciled ${reconciledCount} MATCHED album(s) with no Redacted match back to UNMATCHED...`
+        );
+      }
+    }
+
     // Mark scan as complete
     scanState.isScanning = false;
     scanState.currentAlbum = "";
 
     console.log(
-      `Scan complete: ${insertedCount} inserted, ${updatedCount} updated, ${deletedCount} deleted, ${scanState.errors.length} errors, ${discoveredServices.size} metadata services`
+      `Scan complete: ${insertedCount} inserted, ${updatedCount} updated, ${deletedCount} deleted, ${reconciledCount} reconciled, ${scanState.errors.length} errors, ${discoveredServices.size} metadata services`
     );
 
     return {
