@@ -2,6 +2,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import { useAlbums } from "../hooks/useAlbums";
 import { useLibrary } from "../hooks/useLibrary";
+import { usePlexSettings } from "../hooks/usePlexSettings";
 import { useLibraryScanManager } from "../hooks/useLibraryScanManager";
 import { useBulkMetadataScan } from "../hooks/useBulkMetadataScan";
 import { useBulkMetadataSync } from "../hooks/useBulkMetadataSync";
@@ -63,9 +64,11 @@ function AlbumsPage() {
   const artworkQuality = qualityFilter === "non-hd" ? "non-hd" : "";
   const syncCompleteness = qualityFilter === "incomplete" ? "incomplete" : "";
 
-  const { isSwitching } = useLibrary();
+  const { activeLibrary } = useLibrary();
+  const { data: plexSettings } = usePlexSettings();
+  const plexConnected = !!plexSettings?.configured;
 
-  const { data, isLoading, isError, error } = useAlbums(
+  const { data, isLoading, isError, error, isPlaceholderData } = useAlbums(
     page,
     limit,
     sortBy,
@@ -76,6 +79,15 @@ function AlbumsPage() {
     artworkQuality,
     syncCompleteness
   );
+
+  // Track which library the currently-displayed (non-placeholder) data belongs to,
+  // so we can show the loader only during a *library* switch — not on filter/page
+  // changes, where keeping the previous data is the desired smooth behaviour.
+  const dataLibraryRef = useRef(activeLibrary);
+  useEffect(() => {
+    if (!isPlaceholderData) dataLibraryRef.current = activeLibrary;
+  }, [isPlaceholderData, activeLibrary]);
+  const switchingLibrary = isPlaceholderData && dataLibraryRef.current !== activeLibrary;
   const {
     showScanModal,
     handleStartScan,
@@ -245,7 +257,7 @@ function AlbumsPage() {
   // Check if database is being set up
   const isDatabaseSetup = isError && error?.requiresSetup;
 
-  if (isLoading || isSwitching || isDatabaseSetup) {
+  if (isLoading || switchingLibrary || isDatabaseSetup) {
     const message = isDatabaseSetup
       ? "Setting up database... This may take a moment."
       : "Loading albums...";
@@ -280,7 +292,14 @@ function AlbumsPage() {
     } else {
       // Show different empty states based on match filter
       if (matchFilter === 'unmatched') {
-        mainContent = (
+        // Connected with zero albums: prompt a scan, not "Connect Plex".
+        mainContent = plexConnected ? (
+          <UnmatchedView
+            onButtonClick={handleStartScan}
+            isStarting={isStartingScan}
+            buttonText="Scan Library"
+          />
+        ) : (
           <EmptyState
             icon={<Music className="w-16 h-16 text-main animate-pulse" />}
             heading="No albums yet"

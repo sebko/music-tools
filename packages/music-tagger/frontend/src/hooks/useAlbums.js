@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { fetchAlbums } from '../api/albums';
 import { useLibrary } from './useLibrary';
 
@@ -8,6 +8,7 @@ export function useAlbums(page = 1, limit = 50, sortBy = 'dateCreated', sortOrde
   return useQuery({
     queryKey: ['albums', activeLibrary, { page, limit, sortBy, sortOrder, search, filter, fileSyncStatus, artworkQuality, syncCompleteness }],
     queryFn: () => fetchAlbums({ page, limit, sortBy, sortOrder, search, filter, fileSyncStatus, artworkQuality, syncCompleteness }),
+    placeholderData: keepPreviousData, // Keep prior results visible across key changes (no empty flash)
     staleTime: 30000, // Consider data fresh for 30 seconds to reduce re-fetching
     retry: (failureCount, error) => {
       // If database is being set up, keep retrying up to 10 times
