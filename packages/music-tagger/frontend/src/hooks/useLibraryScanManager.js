@@ -59,8 +59,9 @@ export function useLibraryScanManager() {
 
   const handleScanComplete = () => {
     setShowScanModal(false);
-    // Invalidate albums query to refresh the list
+    // Refresh the album list and the header switcher's per-library counts.
     queryClient.invalidateQueries({ queryKey: ["albums"] });
+    queryClient.invalidateQueries({ queryKey: ["servers"] });
   };
 
   const handleCloseScanModal = () => {

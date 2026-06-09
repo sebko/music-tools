@@ -61,11 +61,13 @@ export function LibraryProvider({ children }) {
 
       navigate(`/?library=${encodeURIComponent(newLibraryId)}`);
 
-      // Refresh library-scoped queries for the new library.
+      // Refresh library-scoped queries for the new library, plus the header
+      // switcher's per-library counts.
       await queryClient.invalidateQueries({ queryKey: ["albums"] });
       await queryClient.invalidateQueries({ queryKey: ["album"] });
       await queryClient.invalidateQueries({ queryKey: ["syncFailures"] });
       await queryClient.invalidateQueries({ queryKey: ["syncFailureCounts"] });
+      queryClient.invalidateQueries({ queryKey: ["servers"] });
 
       try {
         await switchActiveLibrary(newLibraryId);
