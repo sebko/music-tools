@@ -244,10 +244,11 @@ export async function getPlexServer() {
  * @returns {Promise<MusicSection>} The requested music section
  */
 export async function getMusicSectionByName(libraryName) {
-  // Ensure server is connected (getMusicSection establishes plexServer)
-  await getMusicSection();
+  // Capture a local server reference (see getPlexAlbumArtworkUrls): reading the
+  // module-level plexServer after an await is unsafe if clearPlexCache() nulls it.
+  const server = await getPlexServer();
 
-  const library = await plexServer.library();
+  const library = await server.library();
   const sections = await library.sections();
   const section = sections.find(
     s => s.type === "artist" && s.title === libraryName
@@ -296,6 +297,8 @@ export async function getPlexAlbums(options = {}) {
 
   try {
     const section = sectionOverride || await getMusicSection();
+    // Local server reference, safe against concurrent clearPlexCache() nulling.
+    const server = await getPlexServer();
 
     // Build search filters
     const searchArgs = {};
@@ -338,7 +341,7 @@ export async function getPlexAlbums(options = {}) {
     }
 
     const url = `/library/sections/${section.key}/all?${params.toString()}`;
-    const response = await plexServer.query(url);
+    const response = await server.query(url);
     const allAlbums = response.MediaContainer?.Metadata || [];
 
     // Apply date filters if needed (client-side filtering)
@@ -384,7 +387,7 @@ export async function getPlexAlbums(options = {}) {
       const genres = album.Genre?.map(g => g.tag).join(", ") || "";
 
       // Convert relative artwork path to full URL with auth token
-      const artworkUrl = album.thumb ? plexServer.url(album.thumb, true).toString() : null;
+      const artworkUrl = album.thumb ? server.url(album.thumb, true).toString() : null;
 
       return {
         id: album.ratingKey,
@@ -432,12 +435,13 @@ export async function getPlexAlbums(options = {}) {
  */
 export async function getPlexAlbum(albumId) {
   try {
-    await getMusicSection(); // Ensure connection is established
+    // Local server reference, safe against concurrent clearPlexCache() nulling.
+    const server = await getPlexServer();
 
     console.log(`📡 Fetching album: ${albumId}`);
 
     // Use raw Plex API to get album metadata with proper artwork
-    const albumResponse = await plexServer.query(`/library/metadata/${albumId}`);
+    const albumResponse = await server.query(`/library/metadata/${albumId}`);
     const album = albumResponse.MediaContainer?.Metadata?.[0];
 
     if (!album) {
@@ -445,7 +449,7 @@ export async function getPlexAlbum(albumId) {
     }
 
     // Get tracks for this album
-    const tracksResponse = await plexServer.query(`/library/metadata/${albumId}/children`);
+    const tracksResponse = await server.query(`/library/metadata/${albumId}/children`);
     const tracks = tracksResponse.MediaContainer?.Metadata || [];
 
     // Convert dates from Unix timestamps
@@ -453,7 +457,7 @@ export async function getPlexAlbum(albumId) {
     const updatedAt = album.updatedAt ? new Date(album.updatedAt * 1000).toISOString() : null;
 
     // Convert relative artwork path to full URL with auth token
-    const artworkUrl = album.thumb ? plexServer.url(album.thumb, true).toString() : null;
+    const artworkUrl = album.thumb ? server.url(album.thumb, true).toString() : null;
 
     // Extract array fields
     const genres = album.Genre?.map(g => g.tag) || [];
@@ -560,10 +564,14 @@ export async function getPlexAlbum(albumId) {
  */
 export async function getPlexAlbumArtworkUrls(albumId) {
   try {
-    await getMusicSection(); // Ensure connection is established
+    // Capture a local reference to the connected server. Reading the module-level
+    // `plexServer` after an await is unsafe: a concurrent clearPlexCache() (e.g. on
+    // a library switch) can null it mid-flight, which crashed this with
+    // "Cannot read properties of null (reading 'url')" and blanked all thumbnails.
+    const server = await getPlexServer();
 
     // Make lightweight query to get just the album metadata (no tracks)
-    const albumResponse = await plexServer.query(`/library/metadata/${albumId}`);
+    const albumResponse = await server.query(`/library/metadata/${albumId}`);
     const album = albumResponse.MediaContainer?.Metadata?.[0];
 
     if (!album || !album.thumb) {
@@ -571,12 +579,12 @@ export async function getPlexAlbumArtworkUrls(albumId) {
     }
 
     // Get full resolution artwork URL (no compression)
-    const fullUrl = plexServer.url(album.thumb, true).toString();
+    const fullUrl = server.url(album.thumb, true).toString();
 
     // Get thumbnail URL (500x500) for Retina/high-DPI displays
     // 500x500 covers 2x displays nicely (250px CSS @ 2x = 500px actual)
-    // We need to manually construct this because plexServer.url() strips query params
-    const baseFullUrl = plexServer.url(album.thumb, true).toString();
+    // We need to manually construct this because server.url() strips query params
+    const baseFullUrl = server.url(album.thumb, true).toString();
     const urlObj = new URL(baseFullUrl);
     const token = urlObj.searchParams.get("X-Plex-Token");
     const thumbUrl = `${urlObj.origin}/photo/:/transcode?width=500&height=500&minSize=1&upscale=0&url=${album.thumb}&X-Plex-Token=${token}`;
@@ -615,10 +623,11 @@ export async function getPlexGenres() {
  */
 export async function getAlbumLocation(albumId) {
   try {
-    await getMusicSection(); // Ensure connection is established
+    // Local server reference, safe against concurrent clearPlexCache() nulling.
+    const server = await getPlexServer();
 
     // Get tracks for this album
-    const tracksResponse = await plexServer.query(`/library/metadata/${albumId}/children`);
+    const tracksResponse = await server.query(`/library/metadata/${albumId}/children`);
     const tracks = tracksResponse.MediaContainer?.Metadata || [];
 
     if (tracks.length === 0) {
@@ -649,10 +658,11 @@ export async function getAlbumLocation(albumId) {
  * @returns {Promise<Object>} Result with before/after values
  */
 export async function updatePlexAlbumAddedAt(albumId, unixTimestamp) {
-  await getMusicSection();
+  // Local server reference, safe against concurrent clearPlexCache() nulling.
+  const server = await getPlexServer();
 
   // Get current addedAt value
-  const albumResponse = await plexServer.query(`/library/metadata/${albumId}`);
+  const albumResponse = await server.query(`/library/metadata/${albumId}`);
   const album = albumResponse.MediaContainer?.Metadata?.[0];
 
   if (!album) {
@@ -670,7 +680,7 @@ export async function updatePlexAlbumAddedAt(albumId, unixTimestamp) {
     "addedAt.value": String(unixTimestamp),
   });
   const url = `/library/metadata/${albumId}?${params.toString()}`;
-  await plexServer.query(url, "PUT");
+  await server.query(url, "PUT");
 
   console.log(`   ✅ addedAt updated successfully`);
 
@@ -693,19 +703,21 @@ export async function testPlexConnection() {
   try {
     // Test connection using cached credentials (don't clear cache)
     const section = await getMusicSection();
+    // Local server reference, safe against concurrent clearPlexCache() nulling.
+    const server = await getPlexServer();
 
     // Get sample albums
     const { albums, pagination } = await getPlexAlbums({ limit: 5 });
 
     return {
       connected: true,
-      serverName: plexServer.friendlyName,
-      serverVersion: plexServer.version,
-      platform: plexServer.platform,
+      serverName: server.friendlyName,
+      serverVersion: server.version,
+      platform: server.platform,
       musicLibraryTitle: section.title,
       sampleAlbums: albums,
       totalAlbums: pagination.total,
-      message: `Successfully connected to Plex server "${plexServer.friendlyName}"`,
+      message: `Successfully connected to Plex server "${server.friendlyName}"`,
     };
   } catch (error) {
     console.error("Plex connection test failed:", error);
