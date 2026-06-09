@@ -1,7 +1,7 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchPlexSettings, switchActiveLibrary } from "../api/settings";
+import { fetchServers, switchActiveLibrary } from "../api/settings";
 import { setActiveLibraryHeader } from "../api/client";
 import { LibraryContext } from "./libraryContext.js";
 
@@ -10,66 +10,76 @@ export function LibraryProvider({ children }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const { data: settings } = useQuery({
-    queryKey: ["plexSettings"],
-    queryFn: fetchPlexSettings,
+  // Enabled servers -> libraries (+ counts) and the persisted active library id.
+  const { data } = useQuery({
+    queryKey: ["servers"],
+    queryFn: fetchServers,
     staleTime: 5 * 60 * 1000,
   });
 
-  const availableLibraries = settings?.availableLibraries || [];
+  const servers = useMemo(() => data?.servers || [], [data]);
+  const libraries = useMemo(
+    () => servers.flatMap((s) => s.libraries.map((l) => ({ ...l, serverId: s.id, serverName: s.name }))),
+    [servers]
+  );
 
-  // Derive active library: URL param > last known > backend setting > default
+  // Derive the active library id: URL param > last known > backend > first enabled.
   const urlLibrary = searchParams.get("library");
-  const backendLibrary = settings?.activeLibraryName;
-  const lastKnownRef = useRef(backendLibrary || "Music");
-  const activeLibrary = urlLibrary || lastKnownRef.current;
+  const backendLibrary = data?.activeLibraryId;
+  const lastKnownRef = useRef(null);
+  const activeLibrary =
+    urlLibrary || lastKnownRef.current || backendLibrary || libraries[0]?.id || null;
 
-  // Track the most recently known library so we can restore it after navigation
   useEffect(() => {
-    if (urlLibrary) {
-      lastKnownRef.current = urlLibrary;
-    } else if (backendLibrary) {
-      lastKnownRef.current = backendLibrary;
-    }
+    if (urlLibrary) lastKnownRef.current = urlLibrary;
+    else if (backendLibrary) lastKnownRef.current = backendLibrary;
   }, [urlLibrary, backendLibrary]);
 
-  // Ensure ?library= is always in the URL
+  // Ensure ?library= is present once we know one (only when there's a choice to make).
   useEffect(() => {
-    if (!urlLibrary && availableLibraries.length > 1) {
+    if (!urlLibrary && activeLibrary && libraries.length > 1) {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
         next.set("library", activeLibrary);
         return next;
       }, { replace: true });
     }
-  }, [urlLibrary, activeLibrary, availableLibraries.length, setSearchParams]);
+  }, [urlLibrary, activeLibrary, libraries.length, setSearchParams]);
 
-  // Keep API header in sync — set synchronously so it's correct before queries fire
+  // Keep the API header in sync synchronously so queries carry the right library id.
   setActiveLibraryHeader(activeLibrary);
 
-  const switchLibrary = useCallback(async (newLibrary) => {
-    lastKnownRef.current = newLibrary;
-    setActiveLibraryHeader(newLibrary);
+  const activeLibraryName = useMemo(
+    () => libraries.find((l) => l.id === activeLibrary)?.title || null,
+    [libraries, activeLibrary]
+  );
 
-    // Navigate to home with new library param
-    navigate(`/?library=${encodeURIComponent(newLibrary)}`);
+  const switchLibrary = useCallback(
+    async (newLibraryId) => {
+      lastKnownRef.current = newLibraryId;
+      setActiveLibraryHeader(newLibraryId);
 
-    // Invalidate all library-scoped queries to force refetch
-    await queryClient.invalidateQueries({ queryKey: ["albums"] });
-    await queryClient.invalidateQueries({ queryKey: ["album"] });
-    await queryClient.invalidateQueries({ queryKey: ["syncFailures"] });
-    await queryClient.invalidateQueries({ queryKey: ["syncFailureCounts"] });
+      navigate(`/?library=${encodeURIComponent(newLibraryId)}`);
 
-    // Persist to backend
-    try {
-      await switchActiveLibrary(newLibrary);
-    } catch (err) {
-      console.error("Failed to persist library switch:", err);
-    }
-  }, [queryClient, navigate]);
+      // Refresh library-scoped queries for the new library.
+      await queryClient.invalidateQueries({ queryKey: ["albums"] });
+      await queryClient.invalidateQueries({ queryKey: ["album"] });
+      await queryClient.invalidateQueries({ queryKey: ["syncFailures"] });
+      await queryClient.invalidateQueries({ queryKey: ["syncFailureCounts"] });
+
+      try {
+        await switchActiveLibrary(newLibraryId);
+      } catch (err) {
+        console.error("Failed to persist library switch:", err);
+      }
+    },
+    [queryClient, navigate]
+  );
 
   return (
-    <LibraryContext.Provider value={{ activeLibrary, switchLibrary, availableLibraries }}>
+    <LibraryContext.Provider
+      value={{ activeLibrary, activeLibraryName, switchLibrary, servers, libraries }}
+    >
       {children}
     </LibraryContext.Provider>
   );
