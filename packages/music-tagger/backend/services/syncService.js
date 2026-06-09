@@ -27,21 +27,21 @@ import { writePlexMetadata } from "./plexMetadataWriter.js";
  * @returns {Promise<Object>} Result with success status and details
  */
 export async function syncAlbumToPlex(albumId, metadata, options = {}) {
-  const { skipStatusUpdate = false, selectedFields = null, libraryName = "Music" } = options;
+  const { skipStatusUpdate = false, selectedFields = null, libraryId, server } = options;
 
   console.log(`\n🔄 syncAlbumToPlex called for album: ${albumId}`);
   console.log(`   Metadata keys:`, Object.keys(metadata));
 
   try {
     // 1. Validate album exists in Plex
-    const album = await getPlexAlbum(albumId);
+    const album = await getPlexAlbum(server, albumId);
 
     if (!album) {
       throw new Error("Album not found in Plex");
     }
 
     // 2. Write metadata to Plex
-    const plexResult = await writePlexMetadata(albumId, metadata);
+    const plexResult = await writePlexMetadata(server, albumId, metadata);
 
     if (!plexResult.success) {
       throw new Error(plexResult.error || "Failed to write Plex metadata");
@@ -51,12 +51,12 @@ export async function syncAlbumToPlex(albumId, metadata, options = {}) {
     if (!skipStatusUpdate) {
       try {
         const existingAlbum = await prisma.album.findUnique({
-          where: { plexRatingKey_libraryName: { plexRatingKey: albumId, libraryName } },
+          where: { libraryId_plexRatingKey: { libraryId, plexRatingKey: albumId } },
         });
 
         if (existingAlbum) {
           await prisma.album.update({
-            where: { plexRatingKey_libraryName: { plexRatingKey: albumId, libraryName } },
+            where: { libraryId_plexRatingKey: { libraryId, plexRatingKey: albumId } },
             data: {
               matchStatus: "SYNCED",
               syncedAt: new Date(),
@@ -88,7 +88,6 @@ export async function syncAlbumToPlex(albumId, metadata, options = {}) {
                   albumId: existingAlbum.id,
                   syncedFields: JSON.stringify(mergedSyncedFields),
                   lastSyncedAt: new Date(),
-                  libraryName,
                 },
                 update: {
                   syncedFields: JSON.stringify(mergedSyncedFields),

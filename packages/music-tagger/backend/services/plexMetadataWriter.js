@@ -5,7 +5,6 @@
  * This is useful for correcting Plex's display without touching file tags.
  */
 
-import { getPlexServer } from "./plexClient.js";
 
 /**
  * Format Redacted tags for Plex styles
@@ -34,17 +33,16 @@ function formatRedactedTag(tag) {
  * Update album metadata in Plex
  * Only updates fields that are present in the metadata object (merge behavior)
  *
+ * @param {PlexServer} server - Connected @ctrl/plex server (from getServerConnection)
  * @param {string} albumId - Plex album rating key
  * @param {Object} metadata - Redacted metadata object (can be partial/diff)
  * @returns {Promise<Object>} Result with success status
  */
-export async function writePlexMetadata(albumId, metadata) {
+export async function writePlexMetadata(server, albumId, metadata) {
   console.log(`\n📝 Updating Plex metadata for album: ${albumId}`);
   console.log(`   Metadata diff:`, metadata);
 
   try {
-    const server = await getPlexServer();
-
     // Get album info to retrieve library section ID
     const albumResponse = await server.query(`/library/metadata/${albumId}`);
     const album = albumResponse.MediaContainer?.Metadata?.[0];
@@ -182,15 +180,14 @@ export async function writePlexMetadata(albumId, metadata) {
 /**
  * Refresh Plex metadata (triggers re-analysis)
  *
+ * @param {PlexServer} server - Connected @ctrl/plex server (from getServerConnection)
  * @param {string} albumId - Plex album rating key
  * @returns {Promise<Object>} Result with success status
  */
-export async function refreshPlexMetadata(albumId) {
+export async function refreshPlexMetadata(server, albumId) {
   console.log(`\n🔄 Refreshing Plex metadata for album: ${albumId}`);
 
   try {
-    const server = await getPlexServer();
-
     // Send refresh request
     const url = `/library/metadata/${albumId}/refresh`;
     await server.query(url, "PUT");

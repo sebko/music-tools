@@ -24,6 +24,10 @@ import {
   clearPlexCache,
   getAlbumLocation,
   updatePlexAlbumAddedAt,
+  getServerConnection,
+  getLibrarySection,
+  discoverServers,
+  discoverLibraries,
 } from "./services/plexClient.js";
 import { scanPlexLibrary, getScanProgress, stopScan } from "./services/libraryScanner.js";
 import { getAlbumMetadataMatches, recordMetadataMatch } from "./services/enhancementLayer.js";
@@ -133,9 +137,18 @@ app.use((req, res, next) => {
   next();
 });
 
-// Active library middleware - attach req.activeLibrary from header or DB
+// Active library middleware - attaches req.library / req.server from header or DB
 import { activeLibraryMiddleware, invalidateLibraryCache } from "./middleware/activeLibrary.js";
 app.use(activeLibraryMiddleware);
+
+// Resolve the connected Plex server for the request's active library.
+// Throws a 409 if no library/server is configured or selected.
+async function activeServer(req) {
+  if (!req.server) {
+    throw Object.assign(new Error("No active Plex library selected"), { statusCode: 409 });
+  }
+  return getServerConnection(req.server);
+}
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -150,7 +163,10 @@ app.get("/health", (req, res) => {
 app.get("/api/plex/test", async (req, res) => {
   try {
     console.log("Testing Plex connection...");
-    const result = await testPlexConnection();
+    if (!req.library) {
+      return res.status(409).json({ success: false, error: "No active Plex library selected" });
+    }
+    const result = await testPlexConnection(req.library);
 
     if (result.connected) {
       res.json({
@@ -185,10 +201,18 @@ app.post("/api/library/scan", async (req, res) => {
       });
     }
 
+    if (!req.library) {
+      return res.status(409).json({
+        success: false,
+        error: "No active Plex library selected",
+        message: "Select a library before scanning",
+      });
+    }
+
     console.log("🔄 Starting Plex library scan in background...");
 
     // Start scan in background (don't await)
-    scanPlexLibrary(req.activeLibrary).catch(error => {
+    scanPlexLibrary(req.library).catch(error => {
       console.error("Background scan error:", error);
     });
 
@@ -300,9 +324,17 @@ app.post("/api/albums/bulk-metadata-scan", async (req, res) => {
       });
     }
 
+    if (!req.library) {
+      return res.status(409).json({ success: false, error: "No active Plex library selected" });
+    }
+
     const minConfidence = req.body.minConfidence || 85;
     const includeMatched = req.body.includeMatched || false;
     console.log(`🔍 Starting bulk metadata scan (min confidence: ${minConfidence}%)...`);
+
+    // Capture the active library + connected server for the background task.
+    const libraryId = req.library.id;
+    const server = await activeServer(req);
 
     // Reset state
     bulkScanState = {
@@ -330,7 +362,7 @@ app.post("/api/albums/bulk-metadata-scan", async (req, res) => {
         });
 
         // Fetch albums to process (unmatched only, or all if includeMatched=true)
-        const whereClause = includeMatched ? { libraryName: req.activeLibrary } : { matchStatus: "UNMATCHED", libraryName: req.activeLibrary };
+        const whereClause = includeMatched ? { libraryId } : { matchStatus: "UNMATCHED", libraryId };
         const albumsToProcess = await prisma.album.findMany({
           where: whereClause,
           select: {
@@ -358,7 +390,7 @@ app.post("/api/albums/bulk-metadata-scan", async (req, res) => {
 
           try {
             // Fetch live Plex data (same as individual search) for accurate metadata
-            const plexAlbum = await getPlexAlbum(album.plexRatingKey);
+            const plexAlbum = await getPlexAlbum(server, album.plexRatingKey);
 
             if (!plexAlbum) {
               console.log(`❌ Could not fetch Plex data for album ${album.id}`);
@@ -408,7 +440,7 @@ app.post("/api/albums/bulk-metadata-scan", async (req, res) => {
               console.log(`   → Recording Redacted groupId ${bestResult.groupId}`);
 
               // Record the match (same as individual match)
-              await recordMetadataMatch(album.plexRatingKey, "redacted", bestResult.groupId, req.activeLibrary);
+              await recordMetadataMatch(album.plexRatingKey, "redacted", bestResult.groupId, libraryId);
               bulkScanState.matched++;
             } else if (bestResult) {
               console.log(`   ⚠️  SKIP (low confidence): ${bestResult.confidence}% < ${minConfidence}% threshold`);
@@ -430,7 +462,7 @@ app.post("/api/albums/bulk-metadata-scan", async (req, res) => {
               plexRatingKey: album.plexRatingKey,
               title: album.title,
               artist: album.artist,
-            }, null, req.activeLibrary);
+            });
           }
         }
 
@@ -534,6 +566,12 @@ app.post("/api/albums/bulk-sync", async (req, res) => {
       });
     }
 
+    if (!req.library) {
+      return res.status(409).json({ success: false, error: "No active Plex library selected" });
+    }
+    const libraryId = req.library.id;
+    const server = await activeServer(req);
+
     // Reset state
     bulkSyncState = {
       isSyncing: true,
@@ -563,7 +601,7 @@ app.post("/api/albums/bulk-sync", async (req, res) => {
         const albumsToSync = await prisma.album.findMany({
           where: {
             matchStatus: "MATCHED",
-            libraryName: req.activeLibrary,
+            libraryId,
             metadataMatches: {
               some: {
                 metadataServiceId: redactedService.id,
@@ -647,7 +685,7 @@ app.post("/api/albums/bulk-sync", async (req, res) => {
 
             // 3. Use shared syncAlbumToPlex service (same as individual sync)
             // Pass selectedFields to track which fields were synced in database
-            const syncResult = await syncAlbumToPlex(album.plexRatingKey, metadata, { selectedFields, libraryName: req.activeLibrary });
+            const syncResult = await syncAlbumToPlex(album.plexRatingKey, metadata, { selectedFields, libraryId, server });
             if (!syncResult.success) {
               throw new Error(syncResult.error || "Failed to sync to Plex");
             }
@@ -672,7 +710,7 @@ app.post("/api/albums/bulk-sync", async (req, res) => {
               artist: album.artist,
               selectedFields,
               redactedGroupId: redactedMatch?.externalId,
-            }, null, req.activeLibrary);
+            });
 
             bulkSyncState.shouldStop = true; // Stop the loop
             break;
@@ -759,6 +797,12 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
       });
     }
 
+    if (!req.library) {
+      return res.status(409).json({ success: false, error: "No active Plex library selected" });
+    }
+    const libraryId = req.library.id;
+    const server = await activeServer(req);
+
     // Reset state
     bulkSyncToFilesState = {
       isSyncing: true,
@@ -783,7 +827,7 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
         const albumsToSync = await prisma.album.findMany({
           where: {
             matchStatus: 'SYNCED',  // Must be synced from Redacted to Plex
-            libraryName: req.activeLibrary,
+            libraryId,
             ...(resync
               ? { plexFileSync: { isNot: null } }  // Re-sync: already synced to files
               : { plexFileSync: null }              // Initial sync: not yet synced to files
@@ -814,7 +858,7 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
             console.log(`\n[${bulkSyncToFilesState.current}/${bulkSyncToFilesState.total}] Syncing to files: ${album.artist} - ${album.title}`);
 
             // Get full Plex album data
-            const plexAlbum = await getPlexAlbum(album.plexRatingKey);
+            const plexAlbum = await getPlexAlbum(server, album.plexRatingKey);
             if (!plexAlbum) {
               throw new Error("Failed to fetch Plex album data");
             }
@@ -858,7 +902,6 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
                 albumId: album.id,
                 syncedFields: JSON.stringify(selectedFields),
                 lastSyncedAt: new Date(),
-                libraryName: req.activeLibrary,
               },
               update: {
                 syncedFields: JSON.stringify(selectedFields),
@@ -889,7 +932,7 @@ app.post("/api/albums/bulk-sync-to-files", async (req, res) => {
               filesProcessed: writeResult?.filesProcessed,
               filesFailed: writeResult?.filesFailed,
               perFileErrors: writeResult?.errors,
-            }, req.activeLibrary);
+            });
 
             bulkSyncToFilesState.failed++;
             await new Promise((resolve) => setTimeout(resolve, 500));
@@ -968,7 +1011,9 @@ app.get("/api/plex/albums", async (req, res) => {
     const sort = req.query.sort || null;
     const sortDirection = req.query.sortDirection || "desc";
 
-    const result = await getPlexAlbums({
+    const server = await activeServer(req);
+    const section = await getLibrarySection(req.library);
+    const result = await getPlexAlbums(server, section, {
       page,
       limit,
       unmatched,
@@ -996,7 +1041,8 @@ app.get("/api/plex/albums", async (req, res) => {
 // Get single Plex album
 app.get("/api/plex/albums/:id", async (req, res) => {
   try {
-    const album = await getPlexAlbum(req.params.id);
+    const server = await activeServer(req);
+    const album = await getPlexAlbum(server, req.params.id);
 
     if (!album) {
       return res.status(404).json({
@@ -1021,7 +1067,8 @@ app.get("/api/plex/albums/:id", async (req, res) => {
 // Get Plex genres
 app.get("/api/plex/genres", async (req, res) => {
   try {
-    const genres = await getPlexGenres();
+    const section = await getLibrarySection(req.library);
+    const genres = await getPlexGenres(section);
 
     res.json({
       success: true,
@@ -1048,11 +1095,12 @@ app.post("/api/plex/restore-dates", async (req, res) => {
   }
 
   const results = [];
+  const server = await activeServer(req);
 
   for (const albumId of albumIds) {
     try {
       // Get the album's directory path
-      const location = await getAlbumLocation(albumId);
+      const location = await getAlbumLocation(server, albumId);
       if (!location) {
         results.push({ albumId, success: false, error: "Could not determine album location" });
         continue;
@@ -1064,7 +1112,7 @@ app.post("/api/plex/restore-dates", async (req, res) => {
       const birthtimeUnix = Math.floor(birthtime.getTime() / 1000);
 
       // Update Plex addedAt
-      const result = await updatePlexAlbumAddedAt(albumId, birthtimeUnix);
+      const result = await updatePlexAlbumAddedAt(server, albumId, birthtimeUnix);
       result.folderPath = location;
       result.folderBirthtime = birthtime.toISOString();
       results.push({ ...result, success: true });
@@ -1088,7 +1136,8 @@ app.post("/api/plex/restore-dates", async (req, res) => {
 // Individual album endpoint
 app.get("/api/albums/:id", async (req, res) => {
   try {
-    const album = await getPlexAlbum(req.params.id);
+    const server = await activeServer(req);
+    const album = await getPlexAlbum(server, req.params.id);
 
     if (!album) {
       return res.status(404).json({
@@ -1098,7 +1147,7 @@ app.get("/api/albums/:id", async (req, res) => {
     }
 
     // Fetch metadata matches from enhancement layer
-    const metadataMatches = await getAlbumMetadataMatches(req.params.id, req.activeLibrary);
+    const metadataMatches = await getAlbumMetadataMatches(req.params.id, req.library.id);
     album.metadataMatches = metadataMatches;
 
     // Fetch sync status from plex_file_syncs table (Plex → Files sync tracking)
@@ -1158,7 +1207,8 @@ app.get("/api/albums/:id/file-metadata", async (req, res) => {
     const albumId = req.params.id;
 
     // Get album from Plex to get file location
-    const album = await getPlexAlbum(albumId);
+    const server = await activeServer(req);
+    const album = await getPlexAlbum(server, albumId);
 
     if (!album) {
       return res.status(404).json({
@@ -1246,7 +1296,7 @@ app.post("/api/albums/:id/metadata/match", async (req, res) => {
     }
 
     // Record the match (updates matchStatus to MATCHED)
-    const result = await recordMetadataMatch(albumId, service, groupId, req.activeLibrary);
+    const result = await recordMetadataMatch(albumId, service, groupId, req.library.id);
 
     if (result.success) {
       res.json({
@@ -1283,7 +1333,8 @@ app.post("/api/albums/:id/metadata/apply", async (req, res) => {
     }
 
     // Get album from Plex to get file location
-    const album = await getPlexAlbum(albumId);
+    const server = await activeServer(req);
+    const album = await getPlexAlbum(server, albumId);
 
     if (!album) {
       return res.status(404).json({
@@ -1306,7 +1357,7 @@ app.post("/api/albums/:id/metadata/apply", async (req, res) => {
       };
 
       // Use shared sync service which handles Plex write + DB status update
-      const syncResult = await syncAlbumToPlex(albumId, metadata, { selectedFields, libraryName: req.activeLibrary });
+      const syncResult = await syncAlbumToPlex(albumId, metadata, { selectedFields, libraryId: req.library.id, server });
       results.plex = {
         success: syncResult.success,
         message: syncResult.message,
@@ -1370,7 +1421,8 @@ app.post("/api/albums/:id/sync-to-files", async (req, res) => {
     }
 
     // Get album from Plex with full metadata
-    const album = await getPlexAlbum(albumId);
+    const server = await activeServer(req);
+    const album = await getPlexAlbum(server, albumId);
 
     if (!album) {
       return res.status(404).json({
@@ -1398,7 +1450,7 @@ app.post("/api/albums/:id/sync-to-files", async (req, res) => {
     if (result.success) {
       // Find the album in our database by Plex rating key
       const dbAlbum = await prisma.album.findUnique({
-        where: { plexRatingKey_libraryName: { plexRatingKey: albumId, libraryName: req.activeLibrary } },
+        where: { libraryId_plexRatingKey: { libraryId: req.library.id, plexRatingKey: albumId } },
       });
 
       if (dbAlbum) {
@@ -1409,7 +1461,6 @@ app.post("/api/albums/:id/sync-to-files", async (req, res) => {
             albumId: dbAlbum.id,
             syncedFields: JSON.stringify(selectedFields),
             lastSyncedAt: new Date(),
-            libraryName: req.activeLibrary,
           },
           update: {
             syncedFields: JSON.stringify(selectedFields),
@@ -1446,7 +1497,8 @@ app.post("/api/albums/:id/metadata-search", async (req, res) => {
     console.log(`Services: ${services.join(", ")}, Page: ${page}, MinScore: ${minScore}`);
 
     // Get album from Plex to extract metadata
-    const album = await getPlexAlbum(albumId);
+    const server = await activeServer(req);
+    const album = await getPlexAlbum(server, albumId);
 
     if (!album) {
       return res.status(404).json({
@@ -1729,8 +1781,17 @@ app.get("/api/albums", async (req, res) => {
     const sortDirection = req.query.sortDirection || "desc";
     const search = req.query.search;
 
+    // No active library (fresh install / nothing selected): return an empty page
+    // so the UI shows its empty state rather than erroring.
+    if (!req.library) {
+      return res.json({
+        albums: [],
+        pagination: { page, limit, total: 0, totalPages: 0, hasNext: false, hasPrev: false },
+      });
+    }
+
     // Build where clause based on filter and service
-    const where = { libraryName: req.activeLibrary };
+    const where = { libraryId: req.library.id };
 
     // Search by title or artist (SQLite LIKE is case-insensitive for ASCII)
     if (search && search.trim()) {
@@ -1848,7 +1909,8 @@ app.get("/api/albums", async (req, res) => {
     });
 
     // Fetch artwork URLs for all albums in parallel
-    const artworkUrlsPromises = albums.map(album => getPlexAlbumArtworkUrls(album.plexRatingKey));
+    const server = await activeServer(req);
+    const artworkUrlsPromises = albums.map(album => getPlexAlbumArtworkUrls(server, album.plexRatingKey));
     const artworkUrlsArray = await Promise.all(artworkUrlsPromises);
 
     // Helper to check if all implemented fields are synced
@@ -1998,7 +2060,8 @@ app.get("/api/albums/:id/metadata-matches", async (req, res) => {
 // Album artwork thumbnail endpoint (300x300)
 app.get("/api/albums/:id/artwork/thumb", async (req, res) => {
   try {
-    const { thumbUrl } = await getPlexAlbumArtworkUrls(req.params.id);
+    const server = await activeServer(req);
+    const { thumbUrl } = await getPlexAlbumArtworkUrls(server, req.params.id);
 
     if (!thumbUrl) {
       return res.status(404).json({
@@ -2021,7 +2084,8 @@ app.get("/api/albums/:id/artwork/thumb", async (req, res) => {
 // Album artwork endpoint (full resolution)
 app.get("/api/albums/:id/artwork", async (req, res) => {
   try {
-    const { fullUrl } = await getPlexAlbumArtworkUrls(req.params.id);
+    const server = await activeServer(req);
+    const { fullUrl } = await getPlexAlbumArtworkUrls(server, req.params.id);
 
     if (!fullUrl) {
       return res.status(404).json({
@@ -2044,7 +2108,8 @@ app.get("/api/albums/:id/artwork", async (req, res) => {
 // Serve embedded artwork from local audio files
 app.get("/api/albums/:id/artwork/embedded", async (req, res) => {
   try {
-    const album = await getPlexAlbum(req.params.id);
+    const server = await activeServer(req);
+    const album = await getPlexAlbum(server, req.params.id);
     if (!album) return res.status(404).json({ success: false, error: "Album not found" });
     if (!album.location) return res.status(404).json({ success: false, error: "Album location not available" });
 
@@ -2063,7 +2128,8 @@ app.get("/api/albums/:id/artwork/embedded", async (req, res) => {
 // Get embedded artwork dimensions/info without serving full image
 app.get("/api/albums/:id/artwork/embedded/info", async (req, res) => {
   try {
-    const album = await getPlexAlbum(req.params.id);
+    const server = await activeServer(req);
+    const album = await getPlexAlbum(server, req.params.id);
     if (!album) return res.status(404).json({ success: false, error: "Album not found" });
     if (!album.location) return res.status(404).json({ success: false, error: "Album location not available" });
 
@@ -2101,7 +2167,8 @@ app.post("/api/albums/:id/artwork/embed", async (req, res) => {
     }
 
     // Get album from Plex to get file locations
-    const album = await getPlexAlbum(albumId);
+    const server = await activeServer(req);
+    const album = await getPlexAlbum(server, albumId);
 
     if (!album) {
       return res.status(404).json({
@@ -2138,7 +2205,7 @@ app.post("/api/albums/:id/artwork/embed", async (req, res) => {
         const dimensions = getImageDimensionsFromBuffer(image.data);
         if (dimensions) {
           const dbAlbum = await prisma.album.findUnique({
-            where: { plexRatingKey_libraryName: { plexRatingKey: albumId, libraryName: req.activeLibrary } },
+            where: { libraryId_plexRatingKey: { libraryId: req.library.id, plexRatingKey: albumId } },
           });
           if (dbAlbum) {
             await prisma.album.update({
@@ -2190,7 +2257,8 @@ app.post("/api/albums/:id/artwork/upload", upload.single("artwork"), async (req,
     }
 
     // Get album from Plex to get file locations
-    const album = await getPlexAlbum(albumId);
+    const server = await activeServer(req);
+    const album = await getPlexAlbum(server, albumId);
 
     if (!album) {
       return res.status(404).json({
@@ -2229,7 +2297,7 @@ app.post("/api/albums/:id/artwork/upload", upload.single("artwork"), async (req,
         const dimensions = getImageDimensionsFromBuffer(file.buffer);
         if (dimensions) {
           const dbAlbum = await prisma.album.findUnique({
-            where: { plexRatingKey_libraryName: { plexRatingKey: albumId, libraryName: req.activeLibrary } },
+            where: { libraryId_plexRatingKey: { libraryId: req.library.id, plexRatingKey: albumId } },
           });
           if (dbAlbum) {
             await prisma.album.update({
@@ -2274,7 +2342,8 @@ app.get("/api/sync-failures", async (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
     const search = (req.query.q || "").trim() || null;
 
-    const failures = await getRecentFailures(operation, limit, req.activeLibrary, search);
+    if (!req.library) return res.json({ success: true, failures: [] });
+    const failures = await getRecentFailures(operation, limit, req.library.id, search);
 
     res.json({
       success: true,
@@ -2292,7 +2361,8 @@ app.get("/api/sync-failures", async (req, res) => {
 // Get failure counts by operation type
 app.get("/api/sync-failures/counts", async (req, res) => {
   try {
-    const counts = await getFailureCounts(req.activeLibrary);
+    if (!req.library) return res.json({ success: true, counts: {} });
+    const counts = await getFailureCounts(req.library.id);
 
     res.json({
       success: true,
@@ -2312,7 +2382,8 @@ app.delete("/api/sync-failures", async (req, res) => {
   try {
     const operation = req.query.operation || null;
 
-    const result = await clearFailures(operation, req.activeLibrary);
+    if (!req.library) return res.json({ success: true, deleted: 0, message: "No active library" });
+    const result = await clearFailures(operation, req.library.id);
 
     res.json({
       success: true,
