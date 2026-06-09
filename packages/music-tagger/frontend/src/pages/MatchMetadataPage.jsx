@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAlbum } from "../hooks/useAlbum";
 import { useMatchAlbum } from "../hooks/useMatchAlbum";
-import { Button, cn, EmptyState } from "@dj-tools/my-component-library";
+import { Button, cn, EmptyState, TagPill } from "@dj-tools/my-component-library";
 import Lightbox from "../components/Lightbox";
 import { ArrowLeft, Music, ZoomIn } from "lucide-react";
 import { formatRedactedTags } from "../utils/formatters";
@@ -307,8 +307,8 @@ function MatchMetadataPage() {
           {/* Styles Row - Match Plex styles vs Redacted tags */}
           <MetadataRow
             label="Styles"
-            plexValue={localAlbum.styles?.join(', ')}
-            matchValue={formatRedactedTags(redactedData.tags)?.join(', ')}
+            plexValue={localAlbum.styles}
+            matchValue={formatRedactedTags(redactedData.tags)}
           />
 
           {/* Label Row */}
@@ -414,37 +414,51 @@ function MatchMetadataPage() {
 // Automatically detects differences between plexValue and matchValue
 function MetadataRow({ label, plexValue, matchValue }) {
   // Normalize values for comparison
-  // Treat null, undefined, empty string, and '-' as equivalent "no value"
-  const normalizePlexValue = (val) => {
+  // Treat null, undefined, empty string, empty array, and '-' as equivalent "no value"
+  const normalize = (val) => {
     if (val === null || val === undefined || val === '' || val === '-') return null;
-    // Convert to string and trim for consistent comparison
+    if (Array.isArray(val)) {
+      if (val.length === 0) return null;
+      return [...val]
+        .sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: "base" }))
+        .join(',');
+    }
     return String(val).trim();
   };
 
-  const normalizeMatchValue = (val) => {
-    if (val === null || val === undefined || val === '' || val === '-') return null;
-    return String(val).trim();
-  };
-
-  const normalizedPlex = normalizePlexValue(plexValue);
-  const normalizedMatch = normalizeMatchValue(matchValue);
+  const normalizedPlex = normalize(plexValue);
+  const normalizedMatch = normalize(matchValue);
 
   // Auto-detect if values differ
-  // Only highlight if:
-  // 1. Remote has a value (normalizedMatch !== null)
-  // 2. AND values are different (normalizedPlex !== normalizedMatch)
   const isDifferent = normalizedMatch !== null && normalizedPlex !== normalizedMatch;
+
+  const renderValue = (val) => {
+    if (Array.isArray(val)) {
+      if (val.length === 0) return '-';
+      const sorted = [...val].sort((a, b) =>
+        String(a).localeCompare(String(b), undefined, { sensitivity: "base" })
+      );
+      return (
+        <div className="flex flex-wrap gap-1">
+          {sorted.map((tag, i) => (
+            <TagPill key={i} label={tag} isNew={false} />
+          ))}
+        </div>
+      );
+    }
+    return val || '-';
+  };
 
   return (
     <>
       <div className="font-heading text-foreground text-sm py-2">{label}</div>
       <div className="text-foreground text-sm py-2 px-3 rounded-base border border-border">
-        {plexValue || '-'}
+        {renderValue(plexValue)}
       </div>
       <div className={`text-foreground text-sm py-2 px-3 rounded-base border-2 ${
         isDifferent ? 'border-main bg-main/5' : 'border-border'
       }`}>
-        {matchValue || '-'}
+        {renderValue(matchValue)}
       </div>
     </>
   );

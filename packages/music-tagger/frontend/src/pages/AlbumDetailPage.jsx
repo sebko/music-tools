@@ -3,7 +3,7 @@ import { useAlbum } from "../hooks/useAlbum";
 import { useRefreshAlbum } from "../hooks/useRefreshAlbum";
 import { getAlbumArtworkUrl } from "../api/albums";
 import { useState } from "react";
-import { Button, cn, DetailLayout, TrackList, EmptyState } from "@dj-tools/my-component-library";
+import { Button, cn, DetailLayout, TrackList, EmptyState, TagPill } from "@dj-tools/my-component-library";
 import Lightbox from "../components/Lightbox";
 import ArtworkSearchModal from "../components/ArtworkSearchModal";
 import ExternalMetadataLink from "../components/ExternalMetadataLink";
@@ -257,9 +257,15 @@ function AlbumDetailPage() {
               <span className="font-heading text-foreground/70">
                 Genres:
               </span>
-              <span className="ml-2 text-foreground/60">
-                {album.genres.join(", ")}
-              </span>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {[...album.genres]
+                  .sort((a, b) =>
+                    a.localeCompare(b, undefined, { sensitivity: "base" })
+                  )
+                  .map((tag, i) => (
+                    <TagPill key={i} label={tag} isNew={false} />
+                  ))}
+              </div>
             </div>
           )}
 
@@ -269,9 +275,15 @@ function AlbumDetailPage() {
               <span className="font-heading text-foreground/70">
                 Styles:
               </span>
-              <span className="ml-2 text-foreground/60">
-                {album.styles.join(", ")}
-              </span>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {[...album.styles]
+                  .sort((a, b) =>
+                    a.localeCompare(b, undefined, { sensitivity: "base" })
+                  )
+                  .map((tag, i) => (
+                    <TagPill key={i} label={tag} isNew={false} />
+                  ))}
+              </div>
             </div>
           )}
 
@@ -281,9 +293,15 @@ function AlbumDetailPage() {
               <span className="font-heading text-foreground/70">
                 Moods:
               </span>
-              <span className="ml-2 text-foreground/60">
-                {album.moods.join(", ")}
-              </span>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {[...album.moods]
+                  .sort((a, b) =>
+                    a.localeCompare(b, undefined, { sensitivity: "base" })
+                  )
+                  .map((tag, i) => (
+                    <TagPill key={i} label={tag} isNew={false} />
+                  ))}
+              </div>
             </div>
           )}
 
