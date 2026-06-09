@@ -274,8 +274,11 @@ app.post("/api/library/scan-all", async (req, res) => {
       });
     }
 
-    const settings = await prisma.plexSettings.findUnique({ where: { id: "singleton" } });
-    const libraries = settings?.availableLibraries ? JSON.parse(settings.availableLibraries) : [];
+    const libraries = await prisma.plexLibrary.findMany({
+      where: { isEnabled: true },
+      include: { server: { include: { account: true } } },
+      orderBy: [{ server: { name: "asc" } }, { title: "asc" }],
+    });
     if (libraries.length === 0) {
       return res.status(400).json({
         success: false,
@@ -283,7 +286,8 @@ app.post("/api/library/scan-all", async (req, res) => {
       });
     }
 
-    console.log(`🔄 Starting scan for ${libraries.length} libraries: ${libraries.join(", ")}`);
+    const labels = libraries.map(l => `${l.server.name} ▸ ${l.title}`);
+    console.log(`🔄 Starting scan for ${libraries.length} libraries: ${labels.join(", ")}`);
 
     // Scan each library sequentially in background
     (async () => {
@@ -293,7 +297,7 @@ app.post("/api/library/scan-all", async (req, res) => {
         try {
           await scanPlexLibrary(lib);
         } catch (error) {
-          console.error(`Scan error for library "${lib}":`, error);
+          console.error(`Scan error for library "${lib.title}":`, error);
         }
       }
     })().catch(error => {
@@ -302,7 +306,7 @@ app.post("/api/library/scan-all", async (req, res) => {
 
     res.json({
       success: true,
-      message: `Scanning ${libraries.length} libraries: ${libraries.join(", ")}`,
+      message: `Scanning ${libraries.length} libraries: ${labels.join(", ")}`,
     });
   } catch (error) {
     console.error("Failed to start scan-all:", error);
@@ -2403,95 +2407,70 @@ app.delete("/api/sync-failures", async (req, res) => {
 
 // ─── Plex Settings Endpoints ──────────────────────────────────────────────────
 
-// GET /api/settings/plex - return current settings (no secrets)
+// Build the server -> library tree for the settings UI (no secrets).
+async function getPlexConfigTree() {
+  const account = await prisma.plexAccount.findFirst({
+    include: {
+      servers: {
+        orderBy: { name: "asc" },
+        include: { libraries: { orderBy: { title: "asc" } } },
+      },
+    },
+  });
+  const appSettings = await prisma.appSettings.findUnique({ where: { id: "singleton" } });
+  return {
+    configured: !!account,
+    username: account?.username || null,
+    activeLibraryId: appSettings?.activeLibraryId || null,
+    servers: (account?.servers || []).map(s => ({
+      id: s.id,
+      name: s.name,
+      machineIdentifier: s.machineIdentifier,
+      isEnabled: s.isEnabled,
+      libraries: s.libraries.map(l => ({
+        id: l.id,
+        title: l.title,
+        sectionKey: l.sectionKey,
+        isEnabled: l.isEnabled,
+      })),
+    })),
+  };
+}
+
+const EMPTY_BULK_SYNC_STATE = {
+  isSyncing: false, current: 0, total: 0, synced: 0, failed: 0,
+  currentAlbum: null, shouldStop: false, error: null, selectedFields: {},
+};
+const EMPTY_BULK_SYNC_TO_FILES_STATE = {
+  ...EMPTY_BULK_SYNC_STATE, repaired: 0, corrupted: 0, corruptedFiles: [], halted: false,
+};
+
+// GET /api/settings/plex - current config (no secrets)
 app.get("/api/settings/plex", async (req, res) => {
   try {
-    const settings = await prisma.plexSettings.findUnique({ where: { id: "singleton" } });
-    if (!settings) {
-      return res.json({ configured: false });
-    }
-    res.json({
-      configured: !!settings.token,
-      hasToken: !!settings.token,
-      serverName: settings.serverName || null,
-      libraryName: settings.activeLibraryName || null,
-      activeLibraryName: settings.activeLibraryName || null,
-      availableLibraries: settings.availableLibraries ? JSON.parse(settings.availableLibraries) : [],
-    });
+    res.json(await getPlexConfigTree());
   } catch (err) {
     console.error("Error fetching plex settings:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// PUT /api/settings/plex - save server/library selection (token comes from OAuth)
-app.put("/api/settings/plex", async (req, res) => {
+// DELETE /api/settings/plex - disconnect and wipe all Plex-derived data
+app.delete("/api/settings/plex", async (req, res) => {
   try {
-    const { serverName, libraryName, availableLibraries } = req.body;
-    const data = {};
-    if (serverName !== undefined) data.serverName = serverName;
-    if (libraryName !== undefined) data.activeLibraryName = libraryName;
-    if (availableLibraries !== undefined) data.availableLibraries = JSON.stringify(availableLibraries);
-
-    await prisma.plexSettings.upsert({
-      where: { id: "singleton" },
-      update: data,
-      create: { id: "singleton", ...data },
-    });
-
-    clearPlexCache();
-    res.json({ success: true });
-  } catch (err) {
-    console.error("Error saving plex settings:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// DELETE /api/settings/plex/token - delete all Plex data and disconnect
-app.delete("/api/settings/plex/token", async (req, res) => {
-  try {
-    // 1. Stop any in-progress library scan
     stopScan();
+    bulkSyncState = { ...EMPTY_BULK_SYNC_STATE };
+    bulkSyncToFilesState = { ...EMPTY_BULK_SYNC_TO_FILES_STATE };
 
-    // 2. Reset bulk sync states
-    bulkSyncState = {
-      isSyncing: false,
-      current: 0,
-      total: 0,
-      synced: 0,
-      failed: 0,
-      currentAlbum: null,
-      shouldStop: false,
-      error: null,
-      selectedFields: {},
-    };
-    bulkSyncToFilesState = {
-      isSyncing: false,
-      current: 0,
-      total: 0,
-      synced: 0,
-      failed: 0,
-      repaired: 0,
-      currentAlbum: null,
-      shouldStop: false,
-      error: null,
-      selectedFields: {},
-      corrupted: 0,
-      corruptedFiles: [],
-      halted: false,
-    };
-
-    // 3. Delete all albums (cascades to matches, fileSyncs, redactedSyncs, failures)
-    await prisma.album.deleteMany({});
-
-    // 4. Clear Plex settings
-    await prisma.plexSettings.upsert({
+    // Deleting the account cascades servers -> libraries -> albums (+ matches/syncs).
+    await prisma.plexAccount.deleteMany({});
+    await prisma.appSettings.upsert({
       where: { id: "singleton" },
-      update: { token: null, serverName: null, activeLibraryName: null, availableLibraries: '[]' },
+      update: { activeLibraryId: null },
       create: { id: "singleton" },
     });
 
-    // 5. Clear in-memory Plex cache
+    invalidateLibraryCache();
     clearPlexCache();
     res.json({ success: true });
   } catch (err) {
@@ -2538,7 +2517,9 @@ app.post("/api/settings/plex/oauth/start", async (req, res) => {
   }
 });
 
-// GET /api/settings/plex/oauth/poll?id=... - check OAuth status
+// GET /api/settings/plex/oauth/poll?id=... - check OAuth status; on approval persist
+// the account and discover its servers + music libraries (all disabled until the
+// user selects them in the wizard). Returns the full config tree.
 app.get("/api/settings/plex/oauth/poll", async (req, res) => {
   try {
     const { id } = req.query;
@@ -2547,140 +2528,149 @@ app.get("/api/settings/plex/oauth/poll", async (req, res) => {
     const session = pendingPlexOAuthSessions.get(String(id));
     if (!session) return res.status(404).json({ error: "OAuth session not found" });
 
-    if (session.status === "pending") {
-      return res.json({ status: "pending" });
-    }
-
+    if (session.status === "pending") return res.json({ status: "pending" });
     if (session.status === "failed") {
       pendingPlexOAuthSessions.delete(String(id));
       return res.json({ status: "failed", error: session.error });
     }
 
-    // Approved — save token, return servers
     const account = session.account;
-    const resources = await account.resources();
-    const servers = resources
-      .filter(r => r.provides === "server" && r.presence)
-      .map(r => ({ name: r.name, clientIdentifier: r.clientIdentifier }));
+    const authToken = account.authenticationToken;
+    const username = account.username || account.email || account.title || null;
 
-    await prisma.plexSettings.upsert({
-      where: { id: "singleton" },
-      update: { token: account.authenticationToken },
-      create: { id: "singleton", token: account.authenticationToken },
-    });
+    // Replace any existing account (cascades to old servers/libraries/albums).
+    await prisma.plexAccount.deleteMany({});
+    const dbAccount = await prisma.plexAccount.create({ data: { authToken, username } });
+
+    // Discover + persist servers, then their music libraries (best-effort).
+    const servers = await discoverServers(authToken);
+    for (const s of servers) {
+      const dbServer = await prisma.plexServer.create({
+        data: {
+          accountId: dbAccount.id,
+          machineIdentifier: s.machineIdentifier,
+          name: s.name,
+          accessToken: s.accessToken,
+          isEnabled: false,
+        },
+      });
+      try {
+        const libs = await discoverLibraries({ ...dbServer, account: dbAccount });
+        for (const l of libs) {
+          await prisma.plexLibrary.create({
+            data: { serverId: dbServer.id, sectionKey: l.sectionKey, title: l.title, type: l.type, isEnabled: false },
+          });
+        }
+      } catch (e) {
+        console.warn(`Could not list libraries for server "${s.name}": ${e.message}`);
+      }
+    }
 
     clearPlexCache();
     pendingPlexOAuthSessions.delete(String(id));
-
-    res.json({ status: "approved", servers });
+    res.json({ status: "approved", ...(await getPlexConfigTree()) });
   } catch (err) {
     console.error("Plex OAuth poll error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/settings/plex/libraries - get music libraries for configured server
-app.get("/api/settings/plex/libraries", async (req, res) => {
+// PUT /api/settings/plex/selection - enable a set of libraries (and their servers)
+app.put("/api/settings/plex/selection", async (req, res) => {
   try {
-    const serverName = req.query.serverName;
-    const settings = await prisma.plexSettings.findUnique({ where: { id: "singleton" } });
-    if (!settings?.token) {
-      return res.status(400).json({ error: "Plex not authenticated. Please sign in with Plex first." });
+    const { libraryIds } = req.body;
+    if (!Array.isArray(libraryIds)) {
+      return res.status(400).json({ error: "libraryIds (array) is required" });
     }
-    const { MyPlexAccount } = await import("@ctrl/plex");
-    const account = await new MyPlexAccount(null, '', '', settings.token).connect();
-    const resources = await account.resources();
-    const targetName = serverName || settings.serverName;
-    let server = targetName
-      ? resources.find(r => r.provides === "server" && r.presence && r.name === targetName)
-      : resources.find(r => r.provides === "server" && r.presence);
-    if (!server) {
-      return res.status(404).json({ error: "Server not found" });
-    }
-    const plexServer = await server.connect();
-    const library = await plexServer.library();
-    const sections = await library.sections();
-    const libraries = sections
-      .filter(s => s.type === "artist")
-      .map(s => ({ key: s.key, title: s.title }));
+    const enabled = new Set(libraryIds);
+    const noneSentinel = ["__none__"];
 
-    // Save available library names to settings
-    const libraryNames = libraries.map(l => l.title);
-    await prisma.plexSettings.upsert({
+    const allLibraries = await prisma.plexLibrary.findMany({ select: { id: true, serverId: true } });
+    const enabledServerIds = [...new Set(allLibraries.filter(l => enabled.has(l.id)).map(l => l.serverId))];
+
+    await prisma.$transaction([
+      prisma.plexLibrary.updateMany({ where: { id: { in: libraryIds.length ? libraryIds : noneSentinel } }, data: { isEnabled: true } }),
+      prisma.plexLibrary.updateMany({ where: { id: { notIn: libraryIds.length ? libraryIds : noneSentinel } }, data: { isEnabled: false } }),
+      prisma.plexServer.updateMany({ where: { id: { in: enabledServerIds.length ? enabledServerIds : noneSentinel } }, data: { isEnabled: true } }),
+      prisma.plexServer.updateMany({ where: { id: { notIn: enabledServerIds.length ? enabledServerIds : noneSentinel } }, data: { isEnabled: false } }),
+    ]);
+
+    // Keep activeLibraryId pointing at an enabled library.
+    const appSettings = await prisma.appSettings.findUnique({ where: { id: "singleton" } });
+    let activeLibraryId = appSettings?.activeLibraryId || null;
+    if (!activeLibraryId || !enabled.has(activeLibraryId)) {
+      activeLibraryId = libraryIds[0] || null;
+    }
+    await prisma.appSettings.upsert({
       where: { id: "singleton" },
-      update: { availableLibraries: JSON.stringify(libraryNames) },
-      create: { id: "singleton", availableLibraries: JSON.stringify(libraryNames) },
+      update: { activeLibraryId },
+      create: { id: "singleton", activeLibraryId },
     });
 
-    res.json({ libraries });
-  } catch (err) {
-    console.error("Error fetching plex libraries:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PUT /api/settings/plex/active-library - Switch active library
-app.put("/api/settings/plex/active-library", async (req, res) => {
-  try {
-    const { activeLibraryName } = req.body;
-    if (!activeLibraryName || typeof activeLibraryName !== "string") {
-      return res.status(400).json({ error: "activeLibraryName is required" });
-    }
-
-    // Validate against available libraries
-    const settings = await prisma.plexSettings.findUnique({ where: { id: "singleton" } });
-    const available = settings?.availableLibraries ? JSON.parse(settings.availableLibraries) : [];
-    if (available.length > 0 && !available.includes(activeLibraryName)) {
-      return res.status(400).json({
-        error: `Library "${activeLibraryName}" not found. Available: ${available.join(", ")}`,
-      });
-    }
-
-    await prisma.plexSettings.upsert({
-      where: { id: "singleton" },
-      update: { activeLibraryName },
-      create: { id: "singleton", activeLibraryName },
-    });
-
-    // Invalidate caches so new library takes effect immediately
     invalidateLibraryCache();
     clearPlexCache();
-
-    console.log(`🔄 Active library switched to "${activeLibraryName}"`);
-    res.json({ success: true, activeLibraryName });
+    res.json({ success: true, ...(await getPlexConfigTree()) });
   } catch (err) {
-    console.error("Error setting active library:", err);
+    console.error("Error saving Plex selection:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/settings/plex/libraries-with-counts - List libraries with album counts
-app.get("/api/settings/plex/libraries-with-counts", async (req, res) => {
+// GET /api/servers - enabled servers + libraries (+ album counts) for the header switcher
+app.get("/api/servers", async (req, res) => {
   try {
-    const settings = await prisma.plexSettings.findUnique({ where: { id: "singleton" } });
-    const availableLibraries = settings?.availableLibraries
-      ? JSON.parse(settings.availableLibraries)
-      : [];
-    const activeLibraryName = settings?.activeLibraryName || "Music";
+    const appSettings = await prisma.appSettings.findUnique({ where: { id: "singleton" } });
+    const activeLibraryId = appSettings?.activeLibraryId || null;
 
-    // Get album counts per library
-    const counts = await prisma.album.groupBy({
-      by: ["libraryName"],
-      _count: { libraryName: true },
+    const servers = await prisma.plexServer.findMany({
+      where: { isEnabled: true },
+      orderBy: { name: "asc" },
+      include: { libraries: { where: { isEnabled: true }, orderBy: { title: "asc" } } },
+    });
+    const counts = await prisma.album.groupBy({ by: ["libraryId"], _count: { libraryId: true } });
+    const countMap = Object.fromEntries(counts.map(c => [c.libraryId, c._count.libraryId]));
+
+    res.json({
+      activeLibraryId,
+      servers: servers.map(s => ({
+        id: s.id,
+        name: s.name,
+        libraries: s.libraries.map(l => ({
+          id: l.id,
+          title: l.title,
+          albumCount: countMap[l.id] || 0,
+          isActive: l.id === activeLibraryId,
+        })),
+      })),
+    });
+  } catch (err) {
+    console.error("Error fetching servers:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/settings/active-library - switch the active library (header switcher)
+app.put("/api/settings/active-library", async (req, res) => {
+  try {
+    const { libraryId } = req.body;
+    if (!libraryId) return res.status(400).json({ error: "libraryId is required" });
+
+    const library = await prisma.plexLibrary.findUnique({ where: { id: libraryId } });
+    if (!library || !library.isEnabled) {
+      return res.status(400).json({ error: "Library not found or not enabled" });
+    }
+
+    await prisma.appSettings.upsert({
+      where: { id: "singleton" },
+      update: { activeLibraryId: libraryId },
+      create: { id: "singleton", activeLibraryId: libraryId },
     });
 
-    const countMap = {};
-    counts.forEach(c => { countMap[c.libraryName] = c._count.libraryName; });
-
-    const libraries = availableLibraries.map(name => ({
-      name,
-      albumCount: countMap[name] || 0,
-      isActive: name === activeLibraryName,
-    }));
-
-    res.json({ libraries, activeLibraryName });
+    invalidateLibraryCache();
+    console.log(`🔄 Active library switched to "${library.title}" (${libraryId})`);
+    res.json({ success: true, activeLibraryId: libraryId });
   } catch (err) {
-    console.error("Error fetching libraries with counts:", err);
+    console.error("Error setting active library:", err);
     res.status(500).json({ error: err.message });
   }
 });
