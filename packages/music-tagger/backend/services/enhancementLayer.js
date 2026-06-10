@@ -5,14 +5,14 @@ import { prisma } from "../prisma/client.js";
  * @param {string} plexRatingKey - The Plex rating key (album ID from Plex)
  * @returns {Promise<Array<{service: string, externalId: string}>>} Array of metadata matches
  */
-export async function getAlbumMetadataMatches(plexRatingKey, libraryName) {
+export async function getAlbumMetadataMatches(plexRatingKey, libraryId) {
   try {
     // Step 1: Find the album in enhancement layer using composite unique
     const album = await prisma.album.findUnique({
       where: {
-        plexRatingKey_libraryName: {
+        libraryId_plexRatingKey: {
+          libraryId: libraryId,
           plexRatingKey: plexRatingKey,
-          libraryName: libraryName,
         },
       },
       include: {
@@ -51,7 +51,7 @@ export async function getAlbumMetadataMatches(plexRatingKey, libraryName) {
  * @param {string} externalId - External ID in the metadata service (e.g., Redacted groupId)
  * @returns {Promise<{success: boolean, message?: string, error?: string}>}
  */
-export async function recordMetadataMatch(plexRatingKey, serviceName, externalId, libraryName = "Music") {
+export async function recordMetadataMatch(plexRatingKey, serviceName, externalId, libraryId) {
   try {
     // Validate externalId is not undefined/null/empty
     if (!externalId || externalId === 'undefined' || externalId === 'null') {
@@ -69,9 +69,9 @@ export async function recordMetadataMatch(plexRatingKey, serviceName, externalId
     // Step 1: Find the album in enhancement layer (it should already exist from library scan)
     const album = await prisma.album.findUnique({
       where: {
-        plexRatingKey_libraryName: {
+        libraryId_plexRatingKey: {
+          libraryId: libraryId,
           plexRatingKey: plexRatingKey,
-          libraryName: libraryName,
         },
       },
     });

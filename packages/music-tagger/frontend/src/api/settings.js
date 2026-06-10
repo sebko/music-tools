@@ -1,19 +1,13 @@
 import { apiJson } from "./client.js";
 
+// Current config tree: { configured, username, activeLibraryId, servers: [{ id, name,
+// machineIdentifier, isEnabled, libraries: [{ id, title, sectionKey, isEnabled }] }] }
 export async function fetchPlexSettings() {
   return apiJson("/settings/plex");
 }
 
-export async function savePlexSettings(data) {
-  return apiJson("/settings/plex", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-}
-
 export async function disconnectPlex() {
-  return apiJson("/settings/plex/token", { method: "DELETE" });
+  return apiJson("/settings/plex", { method: "DELETE" });
 }
 
 export async function startPlexOAuth() {
@@ -24,19 +18,24 @@ export async function pollPlexOAuth(id) {
   return apiJson(`/settings/plex/oauth/poll?id=${encodeURIComponent(id)}`);
 }
 
-export async function fetchPlexLibraries(serverName) {
-  const params = serverName ? `?serverName=${encodeURIComponent(serverName)}` : "";
-  return apiJson(`/settings/plex/libraries${params}`);
-}
-
-export async function switchActiveLibrary(activeLibraryName) {
-  return apiJson("/settings/plex/active-library", {
+// Enable a chosen set of libraries (and their servers). Returns the updated config tree.
+export async function savePlexSelection(libraryIds) {
+  return apiJson("/settings/plex/selection", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ activeLibraryName }),
+    body: JSON.stringify({ libraryIds }),
   });
 }
 
-export async function fetchLibrariesWithCounts() {
-  return apiJson("/settings/plex/libraries-with-counts");
+// Enabled servers -> libraries (+ album counts) for the header switcher.
+export async function fetchServers() {
+  return apiJson("/servers");
+}
+
+export async function switchActiveLibrary(libraryId) {
+  return apiJson("/settings/active-library", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ libraryId }),
+  });
 }

@@ -16,7 +16,7 @@ import { prisma } from "../prisma/client.js";
  * @param {Object} details - Additional context (file path, API response, etc.)
  * @returns {Promise<Object>} Created failure record
  */
-export async function logSyncFailure(albumId, operation, error, details = null, libraryName = "Music") {
+export async function logSyncFailure(albumId, operation, error, details = null) {
   try {
     return await prisma.syncFailure.create({
       data: {
@@ -24,7 +24,6 @@ export async function logSyncFailure(albumId, operation, error, details = null, 
         operation,
         error: error.message || String(error),
         details: details ? JSON.stringify(details) : null,
-        libraryName,
       },
     });
   } catch (dbError) {
@@ -47,10 +46,10 @@ export async function logSyncFailure(albumId, operation, error, details = null, 
 export async function getRecentFailures(
   operation = null,
   limit = 50,
-  libraryName = "Music",
+  libraryId,
   search = null,
 ) {
-  const where = { libraryName };
+  const where = { album: { libraryId } };
   if (operation) where.operation = operation;
   if (search) {
     where.OR = [
@@ -81,11 +80,11 @@ export async function getRecentFailures(
  *
  * @returns {Promise<Object>} Counts by operation type
  */
-export async function getFailureCounts(libraryName = "Music") {
+export async function getFailureCounts(libraryId) {
   const counts = await prisma.syncFailure.groupBy({
     by: ["operation"],
     _count: { id: true },
-    where: { libraryName },
+    where: { album: { libraryId } },
   });
 
   return counts.reduce((acc, item) => {
@@ -100,8 +99,8 @@ export async function getFailureCounts(libraryName = "Music") {
  * @param {string|null} operation - Operation type to clear, or null for all
  * @returns {Promise<Object>} Delete result with count
  */
-export async function clearFailures(operation = null, libraryName = "Music") {
-  const where = { libraryName };
+export async function clearFailures(operation = null, libraryId) {
+  const where = { album: { libraryId } };
   if (operation) where.operation = operation;
   return prisma.syncFailure.deleteMany({
     where,

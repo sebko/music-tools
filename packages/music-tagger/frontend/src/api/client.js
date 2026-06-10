@@ -1,10 +1,10 @@
 export const API_BASE = '/api';
 
-// Active library state — set by LibraryContext, injected as header on all requests
+// Active library id — set by LibraryContext, injected as header on all requests
 let activeLibraryHeader = null;
 
-export function setActiveLibraryHeader(libraryName) {
-  activeLibraryHeader = libraryName;
+export function setActiveLibraryHeader(libraryId) {
+  activeLibraryHeader = libraryId;
 }
 
 export function getActiveLibraryHeader() {

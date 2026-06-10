@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import fs from "fs/promises";
 import { prisma } from "../prisma/client.js";
-import { getPlexAlbums, getAlbumLocation, getPlexAlbum, getPlexAlbumArtworkUrls, getMusicSectionByName } from "./plexClient.js";
+import { getPlexAlbums, getAlbumLocation, getPlexAlbum, getPlexAlbumArtworkUrls, getLibrarySection, getServerConnection } from "./plexClient.js";
 import { recordMetadataMatch } from "./enhancementLayer.js";
 import { getImageDimensions } from "./imageDimensions.js";
 
@@ -51,8 +51,8 @@ function resetScanState() {
  * @param {string} filePath - Album directory path
  * @returns {string} SHA256 hash
  */
-export function hashFilePath(filePath, libraryName = "Music") {
-  return crypto.createHash("sha256").update(`${filePath}\0${libraryName}`).digest("hex");
+export function hashFilePath(filePath, libraryId) {
+  return crypto.createHash("sha256").update(`${filePath}\0${libraryId}`).digest("hex");
 }
 
 /**
@@ -151,7 +151,7 @@ export async function upsertServiceRelease(serviceName, externalId) {
 /**
  * Scan Plex library and populate enhancement layer.
  *
- * Upserts albums by stable SHA256 id (file_path + libraryName) so
+ * Upserts albums by stable SHA256 id (file_path + libraryId) so
  * match_status, sync_at, AlbumMetadataServiceMatch, PlexFileSync,
  * RedactedPlexSync, and SyncFailure rows all survive rescans.
  * After a clean completion, albums whose id wasn't seen this run
@@ -159,17 +159,19 @@ export async function upsertServiceRelease(serviceName, externalId) {
  *
  * @returns {Promise<{ albumsScanned: number, servicesDiscovered: number }>}
  */
-export async function scanPlexLibrary(libraryName = "Music") {
+export async function scanPlexLibrary(plexLibrary) {
   try {
     // Reset and initialize scan state
     resetScanState();
     scanState.isScanning = true;
 
-    console.log(`Starting Plex library scan for "${libraryName}"...`);
+    const libraryId = plexLibrary.id;
+    console.log(`Starting Plex library scan for "${plexLibrary.title}" (${libraryId})...`);
 
-    // Step 1: Connect to the specific Plex library section
-    console.log(`Connecting to Plex library section "${libraryName}"...`);
-    const section = await getMusicSectionByName(libraryName);
+    // Step 1: Connect to the specific Plex server + library section
+    console.log(`Connecting to Plex library section "${plexLibrary.title}"...`);
+    const server = await getServerConnection(plexLibrary.server);
+    const section = await getLibrarySection(plexLibrary);
 
     // Step 2: Fetch all albums from Plex
     console.log("Fetching albums from Plex...");
@@ -179,7 +181,7 @@ export async function scanPlexLibrary(libraryName = "Music") {
     let hasMore = true;
 
     while (hasMore && !scanState.shouldStop) {
-      const result = await getPlexAlbums({ page, limit, sectionOverride: section });
+      const result = await getPlexAlbums(server, section, { page, limit });
       allAlbums = allAlbums.concat(result.albums);
 
       console.log(
@@ -209,7 +211,7 @@ export async function scanPlexLibrary(libraryName = "Music") {
     // distinguish inserts from updates without a DB round-trip per album
     // and compute stale deletions after the loop.
     const priorAlbums = await prisma.album.findMany({
-      where: { libraryName },
+      where: { libraryId },
       select: { id: true },
     });
     const priorAlbumIds = new Set(priorAlbums.map((a) => a.id));
@@ -237,7 +239,7 @@ export async function scanPlexLibrary(libraryName = "Music") {
 
       try {
         // Fetch full album details to get GUIDs and tracks
-        const fullAlbum = await getPlexAlbum(plexAlbum.id);
+        const fullAlbum = await getPlexAlbum(server, plexAlbum.id);
 
         if (!fullAlbum) {
           console.warn(`Album ${plexAlbum.id} (${plexAlbum.title}) not found, skipping`);
@@ -255,7 +257,7 @@ export async function scanPlexLibrary(libraryName = "Music") {
         }
 
         // Generate stable ID
-        const albumId = hashFilePath(location, libraryName);
+        const albumId = hashFilePath(location, libraryId);
 
         // Parse GUIDs to extract metadata services
         const metadataServices = parseGUIDs(fullAlbum.guids || []);
@@ -295,7 +297,7 @@ export async function scanPlexLibrary(libraryName = "Music") {
           update: mutableFields,
           create: {
             id: albumId,
-            libraryName,
+            libraryId,
             ...mutableFields,
           },
         });
@@ -309,7 +311,7 @@ export async function scanPlexLibrary(libraryName = "Music") {
 
         // Extract artwork dimensions
         try {
-          const artworkUrls = await getPlexAlbumArtworkUrls(plexAlbum.id);
+          const artworkUrls = await getPlexAlbumArtworkUrls(server, plexAlbum.id);
           if (artworkUrls.fullUrl) {
             const dimensions = await getImageDimensions(artworkUrls.fullUrl);
             if (dimensions) {
@@ -331,7 +333,7 @@ export async function scanPlexLibrary(libraryName = "Music") {
           discoveredServices.add(service);
 
           // Use recordMetadataMatch to ensure matchStatus is updated
-          await recordMetadataMatch(plexAlbum.id, service, externalId, libraryName);
+          await recordMetadataMatch(plexAlbum.id, service, externalId, libraryId);
 
           // Ensure service release table exists
           await ensureServiceReleaseTable(service);
@@ -362,7 +364,7 @@ export async function scanPlexLibrary(libraryName = "Music") {
         const CHUNK = 500;
         for (let i = 0; i < staleIds.length; i += CHUNK) {
           const result = await prisma.album.deleteMany({
-            where: { libraryName, id: { in: staleIds.slice(i, i + CHUNK) } },
+            where: { libraryId, id: { in: staleIds.slice(i, i + CHUNK) } },
           });
           deletedCount += result.count;
         }
@@ -378,7 +380,7 @@ export async function scanPlexLibrary(libraryName = "Music") {
     let reconciledCount = 0;
     if (!scanState.shouldStop) {
       const matchedAlbums = await prisma.album.findMany({
-        where: { libraryName, matchStatus: "MATCHED" },
+        where: { libraryId, matchStatus: "MATCHED" },
         select: {
           id: true,
           metadataMatches: {
@@ -395,7 +397,7 @@ export async function scanPlexLibrary(libraryName = "Music") {
         const CHUNK = 500;
         for (let i = 0; i < staleMatchedIds.length; i += CHUNK) {
           const result = await prisma.album.updateMany({
-            where: { libraryName, id: { in: staleMatchedIds.slice(i, i + CHUNK) } },
+            where: { libraryId, id: { in: staleMatchedIds.slice(i, i + CHUNK) } },
             data: { matchStatus: "UNMATCHED" },
           });
           reconciledCount += result.count;

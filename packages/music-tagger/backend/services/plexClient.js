@@ -8,263 +8,127 @@
 import { MyPlexAccount, Album } from "@ctrl/plex";
 import { prisma } from "../prisma/client.js";
 
-// Configuration - read dynamically to support test environment overrides
-let plexServer = null;
-let musicSection = null;
-
-// Auth token caching to prevent rate limiting
-let cachedAuthToken = null;
-let authTokenExpiry = null;
-let authInProgress = null;
-
-// Full initialization promise (auth + server connect + section lookup)
-let initInProgress = null;
+// Connection caches. The app talks to MANY Plex servers, so connections are keyed
+// by stable identity rather than a single global. Both have a TTL so a stale/relayed
+// connection eventually re-resolves.
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const accountConnections = new Map(); // authToken -> { account, at }
+const serverConnections = new Map(); // machineIdentifier -> { server, at }
 
 /**
- * Get Plex configuration from DB (preferred) or fall back to env vars
+ * Clear cached Plex connections. Pass a machineIdentifier to clear just that server,
+ * or omit to clear everything (e.g. on disconnect).
  */
-async function getPlexConfig() {
-  try {
-    const dbSettings = await prisma.plexSettings.findUnique({ where: { id: "singleton" } });
-    if (dbSettings?.token) {
-      return {
-        token: dbSettings.token,
-        serverName: dbSettings.serverName,
-        libraryName: dbSettings.activeLibraryName,
-      };
-    }
-  } catch (err) {
-    console.log("  ⚠️  Could not read Plex settings from DB, falling back to env vars:", err.message);
+export function clearPlexCache(machineIdentifier = null) {
+  if (machineIdentifier) {
+    serverConnections.delete(machineIdentifier);
+  } else {
+    serverConnections.clear();
+    accountConnections.clear();
   }
-  // Fall back to env vars (legacy support)
-  return {
-    serverUrl: process.env.PLEX_URL || "http://localhost:32400",
-    username: process.env.PLEX_USERNAME,
-    password: process.env.PLEX_PASSWORD,
-    serverName: process.env.PLEX_SERVER_NAME,
-    libraryName: process.env.PLEX_LIBRARY_NAME,
-  };
+  console.log(`🔄 Plex cache cleared${machineIdentifier ? ` for ${machineIdentifier}` : ""}`);
 }
 
 /**
- * Clear all module-level Plex cache so new settings take effect
+ * Connect (and cache) a MyPlexAccount for a given auth token.
+ * @param {string} authToken - Plex account auth token
+ * @returns {Promise<MyPlexAccount>}
  */
-export function clearPlexCache() {
-  plexServer = null;
-  musicSection = null;
-  cachedAuthToken = null;
-  authTokenExpiry = null;
-  authInProgress = null;
-  initInProgress = null;
-  console.log("🔄 Plex cache cleared");
-}
-
-/**
- * Authenticate to Plex using OAuth token or legacy username/password
- * @param {Object} config - Plex config from getPlexConfig()
- * @returns {Promise<MyPlexAccount>} Authenticated account
- */
-async function authenticateToPlex(config) {
-  const now = Date.now();
-
-  // Check if we have a valid in-memory cached token
-  if (cachedAuthToken && (!authTokenExpiry || now < authTokenExpiry)) {
-    console.log(`  📦 Using cached auth token`);
-    try {
-      const account = await new MyPlexAccount(null, '', '', cachedAuthToken).connect();
-      return account;
-    } catch (error) {
-      console.log(`  ⚠️  Cached token failed, re-authenticating: ${error.message}`);
-      cachedAuthToken = null;
-      authTokenExpiry = null;
-    }
+export async function getAccountConnection(authToken) {
+  if (!authToken) {
+    throw new Error("Plex not configured. Please sign in with Plex in Settings.");
   }
-
-  // OAuth token-based auth (from Settings page)
-  if (config.token) {
-    console.log(`  🔑 Authenticating with OAuth token...`);
-    const account = await new MyPlexAccount(null, '', '', config.token).connect();
-    cachedAuthToken = account.authenticationToken;
-    authTokenExpiry = now + 24 * 60 * 60 * 1000; // 24 hours
-    console.log(`  ✅ Authenticated with OAuth token`);
-    return account;
+  const cached = accountConnections.get(authToken);
+  if (cached && Date.now() - cached.at < CACHE_TTL) {
+    return cached.account;
   }
-
-  // Legacy env-var username/password auth
-  const plexUrl = config.serverUrl || "http://localhost:32400";
-  console.log(`  🔑 Authenticating with username/password...`);
-  const account = await new MyPlexAccount(plexUrl, config.username, config.password).connect();
-  cachedAuthToken = account.authenticationToken;
-  authTokenExpiry = now + 24 * 60 * 60 * 1000; // 24 hours
-  console.log(`  ✅ Cached new auth token (expires in 24h)`);
+  const account = await new MyPlexAccount(null, "", "", authToken).connect();
+  accountConnections.set(authToken, { account, at: Date.now() });
   return account;
 }
 
 /**
- * Initialize Plex connection and get music library section
- * @returns {Promise<MusicSection>} Initialized music section
+ * Connect (and cache) a specific Plex server.
+ * @param {Object} plexServer - PlexServer row; must include `machineIdentifier`,
+ *   `name`, and the related `account` ({ authToken }).
+ * @returns {Promise<PlexServer>} Connected @ctrl/plex server instance
  */
-async function getMusicSection() {
-  const config = await getPlexConfig();
-  const PLEX_SERVER_NAME = config.serverName;
-  const PLEX_LIBRARY_NAME = config.libraryName;
-
-  if (!config.token && (!config.username || !config.password)) {
-    throw new Error("Plex not configured. Please sign in with Plex in Settings.");
+export async function getServerConnection(plexServer) {
+  const machineId = plexServer.machineIdentifier;
+  const cached = serverConnections.get(machineId);
+  if (cached && Date.now() - cached.at < CACHE_TTL) {
+    return cached.server;
   }
 
-  // Return cached section if already initialized
-  if (musicSection) {
-    return musicSection;
+  const authToken = plexServer.account?.authToken;
+  if (!authToken) {
+    throw new Error(`Plex server "${plexServer.name}" is missing its account token.`);
   }
 
-  // If full initialization is already in progress, wait for it to complete
-  if (initInProgress) {
-    console.log(`  ⏳ Plex initialization in progress, waiting...`);
-    return await initInProgress;
-  }
-
-  console.log(`🔌 Connecting to Plex...`);
-
-  // Track the full initialization so concurrent callers wait for the real result
-  initInProgress = (async () => {
-  try {
-    // Start authentication and track it to prevent concurrent auth attempts
-    authInProgress = authenticateToPlex(config);
-    const account = await authInProgress;
-    authInProgress = null;
-
-    console.log(`✅ Connected to Plex account successfully`);
-
-    // Get local server resource
-    const resources = await account.resources();
-    let localServer;
-
-    if (PLEX_SERVER_NAME) {
-      // Find server by name if specified
-      localServer = resources.find(
-        r => r.provides === "server" && r.presence && r.name === PLEX_SERVER_NAME
-      );
-
-      if (!localServer) {
-        const availableServers = resources
-          .filter(r => r.provides === "server" && r.presence)
-          .map(r => r.name)
-          .join(", ");
-        throw new Error(
-          `Plex server "${PLEX_SERVER_NAME}" not found. Available servers: ${availableServers || "none"}`
-        );
-      }
-
-      console.log(`📡 Found Plex server: "${localServer.name}" (selected by PLEX_SERVER_NAME)`);
-    } else {
-      // Use first available server if no name specified
-      localServer = resources.find(r => r.provides === "server" && r.presence);
-
-      if (!localServer) {
-        throw new Error("No local Plex server found. Make sure your Plex Media Server is running.");
-      }
-
-      console.log(`📡 Found Plex server: "${localServer.name}" (first available)`);
-    }
-
-    // Connect to the server
-    plexServer = await localServer.connect();
-    console.log(`✅ Connected to Plex server successfully`);
-
-    // Get library and find music section
-    const library = await plexServer.library();
-    const sections = await library.sections();
-
-    // Find music section by name if specified, otherwise use first
-    let musicSectionData;
-    if (PLEX_LIBRARY_NAME) {
-      musicSectionData = sections.find(
-        section => section.type === "artist" && section.title === PLEX_LIBRARY_NAME
-      );
-
-      if (!musicSectionData) {
-        const availableLibraries = sections
-          .filter(s => s.type === "artist")
-          .map(s => s.title)
-          .join(", ");
-        throw new Error(
-          `Plex library "${PLEX_LIBRARY_NAME}" not found. Available music libraries: ${availableLibraries || "none"}`
-        );
-      }
-
-      console.log(
-        `🎵 Found music library: "${musicSectionData.title}" (selected by PLEX_LIBRARY_NAME)`
-      );
-    } else {
-      // Find the first music section (type = 'artist')
-      musicSectionData = sections.find(section => section.type === "artist");
-
-      if (!musicSectionData) {
-        throw new Error(
-          "No music library found in Plex. Please add a music library to your Plex server."
-        );
-      }
-
-      console.log(`🎵 Found music library: "${musicSectionData.title}" (first available)`);
-    }
-
-    // Get the full music section object
-    musicSection = await library.section(musicSectionData.title);
-
-    return musicSection;
-  } catch (error) {
-    console.error("Failed to connect to Plex:", error);
-    initInProgress = null; // Clear so next attempt can retry
-    throw new Error(`Plex connection failed: ${error.message}`);
-  } finally {
-    // Clear initInProgress once done (success or failure handled above)
-    if (initInProgress) initInProgress = null;
-  }
-  })();
-
-  return await initInProgress;
-}
-
-/**
- * Get the Plex server instance (ensures connection is established)
- * This is the single source of truth for Plex server connection.
- * @returns {Promise<PlexServer>} Connected Plex server
- */
-export async function getPlexServer() {
-  await getMusicSection(); // Establishes connection and caches plexServer
-  return plexServer;
-}
-
-/**
- * Get a specific music library section by name.
- * Ensures the server connection is established, then looks up the named section.
- * Does NOT use or mutate the cached `musicSection`.
- * @param {string} libraryName - The Plex library title to connect to
- * @returns {Promise<MusicSection>} The requested music section
- */
-export async function getMusicSectionByName(libraryName) {
-  // Capture a local server reference (see getPlexAlbumArtworkUrls): reading the
-  // module-level plexServer after an await is unsafe if clearPlexCache() nulls it.
-  const server = await getPlexServer();
-
-  const library = await server.library();
-  const sections = await library.sections();
-  const section = sections.find(
-    s => s.type === "artist" && s.title === libraryName
+  const account = await getAccountConnection(authToken);
+  const resources = await account.resources();
+  const resource = resources.find(
+    r => r.provides === "server" && r.clientIdentifier === machineId
   );
-
-  if (!section) {
-    const available = sections
-      .filter(s => s.type === "artist")
-      .map(s => s.title)
-      .join(", ");
+  if (!resource) {
     throw new Error(
-      `Plex library "${libraryName}" not found. Available music libraries: ${available || "none"}`
+      `Plex server "${plexServer.name}" (${machineId}) is not reachable on this account.`
     );
   }
 
+  const server = await resource.connect();
+  serverConnections.set(machineId, { server, at: Date.now() });
+  return server;
+}
+
+/**
+ * Resolve the music section for a PlexLibrary row, by its stable sectionKey.
+ * @param {Object} plexLibrary - PlexLibrary row; must include the related `server`
+ *   (with its `account`), plus `sectionKey` and `title`.
+ * @returns {Promise<MusicSection>} The requested music section
+ */
+export async function getLibrarySection(plexLibrary) {
+  const server = await getServerConnection(plexLibrary.server);
+  const library = await server.library();
+  const sections = await library.sections();
+  const section = sections.find(s => String(s.key) === String(plexLibrary.sectionKey));
+  if (!section) {
+    throw new Error(
+      `Plex section ${plexLibrary.sectionKey} ("${plexLibrary.title}") not found on "${plexLibrary.server.name}".`
+    );
+  }
   return await library.section(section.title);
+}
+
+/**
+ * Discover the music servers available to an account (for the setup wizard).
+ * @param {string} authToken - Plex account auth token
+ * @returns {Promise<Array<{machineIdentifier, name, accessToken}>>}
+ */
+export async function discoverServers(authToken) {
+  const account = await getAccountConnection(authToken);
+  const resources = await account.resources();
+  return resources
+    .filter(r => r.provides === "server" && r.presence)
+    .map(r => ({
+      machineIdentifier: r.clientIdentifier,
+      name: r.name,
+      accessToken: r.accessToken,
+    }));
+}
+
+/**
+ * Discover the music (artist-type) library sections on a server (for the wizard).
+ * @param {Object} plexServer - PlexServer row (with related `account`)
+ * @returns {Promise<Array<{sectionKey, title, type}>>}
+ */
+export async function discoverLibraries(plexServer) {
+  const server = await getServerConnection(plexServer);
+  const library = await server.library();
+  const sections = await library.sections();
+  return sections
+    .filter(s => s.type === "artist")
+    .map(s => ({ sectionKey: String(s.key), title: s.title, type: s.type }));
 }
 
 /**
@@ -281,7 +145,7 @@ export async function getMusicSectionByName(libraryName) {
  * @param {string} options.sortDirection - Sort direction (asc or desc)
  * @returns {Promise<Object>} Albums with pagination info
  */
-export async function getPlexAlbums(options = {}) {
+export async function getPlexAlbums(server, section, options = {}) {
   const {
     page = 1,
     limit = 50,
@@ -292,13 +156,9 @@ export async function getPlexAlbums(options = {}) {
     updatedAfter = null,
     sort = null,
     sortDirection = "desc",
-    sectionOverride = null,
   } = options;
 
   try {
-    const section = sectionOverride || await getMusicSection();
-    // Local server reference, safe against concurrent clearPlexCache() nulling.
-    const server = await getPlexServer();
 
     // Build search filters
     const searchArgs = {};
@@ -430,14 +290,12 @@ export async function getPlexAlbums(options = {}) {
 
 /**
  * Get a single album by ID with full track information
+ * @param {PlexServer} server - Connected @ctrl/plex server (from getServerConnection)
  * @param {string} albumId - Plex album rating key
  * @returns {Promise<Object|null>} Album with tracks or null
  */
-export async function getPlexAlbum(albumId) {
+export async function getPlexAlbum(server, albumId) {
   try {
-    // Local server reference, safe against concurrent clearPlexCache() nulling.
-    const server = await getPlexServer();
-
     console.log(`📡 Fetching album: ${albumId}`);
 
     // Use raw Plex API to get album metadata with proper artwork
@@ -559,17 +417,12 @@ export async function getPlexAlbum(albumId) {
 
 /**
  * Get album artwork URLs (thumbnail and full resolution)
+ * @param {PlexServer} server - Connected @ctrl/plex server (from getServerConnection)
  * @param {string} albumId - Plex album rating key
  * @returns {Promise<{thumbUrl: string|null, fullUrl: string|null}>} Artwork URLs
  */
-export async function getPlexAlbumArtworkUrls(albumId) {
+export async function getPlexAlbumArtworkUrls(server, albumId) {
   try {
-    // Capture a local reference to the connected server. Reading the module-level
-    // `plexServer` after an await is unsafe: a concurrent clearPlexCache() (e.g. on
-    // a library switch) can null it mid-flight, which crashed this with
-    // "Cannot read properties of null (reading 'url')" and blanked all thumbnails.
-    const server = await getPlexServer();
-
     // Make lightweight query to get just the album metadata (no tracks)
     const albumResponse = await server.query(`/library/metadata/${albumId}`);
     const album = albumResponse.MediaContainer?.Metadata?.[0];
@@ -602,12 +455,12 @@ export async function getPlexAlbumArtworkUrls(albumId) {
 }
 
 /**
- * Get all available genres from the music library
+ * Get all available genres from a music library section
+ * @param {MusicSection} section - Section from getLibrarySection
  * @returns {Promise<string[]>} List of genres
  */
-export async function getPlexGenres() {
+export async function getPlexGenres(section) {
   try {
-    const section = await getMusicSection();
     const genres = await section.genres();
     return genres.map(genre => genre.title || genre.tag).sort();
   } catch (error) {
@@ -618,14 +471,12 @@ export async function getPlexGenres() {
 
 /**
  * Get album directory from track file paths
+ * @param {PlexServer} server - Connected @ctrl/plex server (from getServerConnection)
  * @param {string} albumId - Plex album rating key
  * @returns {Promise<string|null>} Album directory path or null
  */
-export async function getAlbumLocation(albumId) {
+export async function getAlbumLocation(server, albumId) {
   try {
-    // Local server reference, safe against concurrent clearPlexCache() nulling.
-    const server = await getPlexServer();
-
     // Get tracks for this album
     const tracksResponse = await server.query(`/library/metadata/${albumId}/children`);
     const tracks = tracksResponse.MediaContainer?.Metadata || [];
@@ -653,14 +504,12 @@ export async function getAlbumLocation(albumId) {
 
 /**
  * Update the addedAt timestamp for a Plex album
+ * @param {PlexServer} server - Connected @ctrl/plex server (from getServerConnection)
  * @param {string} albumId - Plex album rating key
  * @param {number} unixTimestamp - Unix timestamp (seconds) to set as addedAt
  * @returns {Promise<Object>} Result with before/after values
  */
-export async function updatePlexAlbumAddedAt(albumId, unixTimestamp) {
-  // Local server reference, safe against concurrent clearPlexCache() nulling.
-  const server = await getPlexServer();
-
+export async function updatePlexAlbumAddedAt(server, albumId, unixTimestamp) {
   // Get current addedAt value
   const albumResponse = await server.query(`/library/metadata/${albumId}`);
   const album = albumResponse.MediaContainer?.Metadata?.[0];
@@ -699,15 +548,13 @@ export async function updatePlexAlbumAddedAt(albumId, unixTimestamp) {
  * Test Plex connection and return server info
  * @returns {Promise<Object>} Server connection info
  */
-export async function testPlexConnection() {
+export async function testPlexConnection(plexLibrary) {
   try {
-    // Test connection using cached credentials (don't clear cache)
-    const section = await getMusicSection();
-    // Local server reference, safe against concurrent clearPlexCache() nulling.
-    const server = await getPlexServer();
+    const server = await getServerConnection(plexLibrary.server);
+    const section = await getLibrarySection(plexLibrary);
 
     // Get sample albums
-    const { albums, pagination } = await getPlexAlbums({ limit: 5 });
+    const { albums, pagination } = await getPlexAlbums(server, section, { limit: 5 });
 
     return {
       connected: true,

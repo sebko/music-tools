@@ -1,42 +1,44 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { cn, Button, PageHeader } from "@dj-tools/my-component-library";
 import { pollPlexOAuth } from "../api/settings";
 import {
   usePlexSettings,
-  useSavePlexSettings,
+  useSavePlexSelection,
   useDisconnectPlex,
   useStartPlexOAuth,
-  usePlexLibraries,
 } from "../hooks/usePlexSettings";
 
 function SettingsPage() {
   const navigate = useNavigate();
-  const { data: savedSettings, refetch: refetchSettings } = usePlexSettings();
-  const saveMutation = useSavePlexSettings();
+  const { data: settings, refetch: refetchSettings } = usePlexSettings();
+  const saveSelection = useSavePlexSelection();
   const disconnectMutation = useDisconnectPlex();
   const startOAuthMutation = useStartPlexOAuth();
 
   // OAuth flow state
   const [oauthSession, setOauthSession] = useState(null); // { id, code, uri }
-  const [pollStatus, setPollStatus] = useState("idle"); // 'idle'|'polling'|'approved'|'failed'
+  const [pollStatus, setPollStatus] = useState("idle"); // 'idle'|'polling'|'failed'
   const [pollError, setPollError] = useState(null);
-  const [availableServers, setAvailableServers] = useState([]);
   const pollIntervalRef = useRef(null);
   const plexWindowRef = useRef(null);
 
-  // Server/library selection
-  const [selectedServer, setSelectedServer] = useState("");
-  const [selectedLibraries, setSelectedLibraries] = useState(new Set());
+  const servers = useMemo(() => settings?.servers || [], [settings]);
+  const configured = !!settings?.configured;
 
-  // Fetch libraries once a server is selected after OAuth approval
-  const { data: librariesData, isLoading: librariesLoading } = usePlexLibraries(
-    pollStatus === "approved" && selectedServer ? selectedServer : null
-  );
-  const availableLibraries = librariesData?.libraries || [];
+  // Selected library ids — seeded once from the persisted enabled set.
+  const [selectedLibraryIds, setSelectedLibraryIds] = useState(null);
+  useEffect(() => {
+    if (selectedLibraryIds === null && servers.length > 0) {
+      const enabled = new Set();
+      servers.forEach((s) => s.libraries.forEach((l) => { if (l.isEnabled) enabled.add(l.id); }));
+      setSelectedLibraryIds(enabled);
+    }
+  }, [servers, selectedLibraryIds]);
+  const selected = selectedLibraryIds || new Set();
 
-  // Polling loop
+  // Polling loop — on approval the backend returns the discovered server/library tree.
   useEffect(() => {
     if (pollStatus !== "polling" || !oauthSession) return;
 
@@ -47,11 +49,8 @@ function SettingsPage() {
           clearInterval(pollIntervalRef.current);
           plexWindowRef.current?.close();
           plexWindowRef.current = null;
-          setAvailableServers(result.servers || []);
-          if (result.servers?.length === 1) {
-            setSelectedServer(result.servers[0].name);
-          }
-          setPollStatus("approved");
+          setPollStatus("idle");
+          setSelectedLibraryIds(null); // reseed from the freshly discovered tree
           refetchSettings();
         } else if (result.status === "failed") {
           clearInterval(pollIntervalRef.current);
@@ -77,9 +76,7 @@ function SettingsPage() {
         setPollStatus("polling");
         plexWindowRef.current = window.open(data.uri, "_blank");
       },
-      onError: (err) => {
-        setPollError(err.message);
-      },
+      onError: (err) => setPollError(err.message),
     });
   };
 
@@ -91,57 +88,45 @@ function SettingsPage() {
   };
 
   const handleDisconnect = () => {
-    if (!window.confirm(
-      "This will delete all album data and disconnect from Plex. Are you sure?"
-    )) return;
+    if (!window.confirm("This will delete all album data and disconnect from Plex. Are you sure?")) return;
     disconnectMutation.mutate(undefined, {
       onSuccess: () => {
         setOauthSession(null);
         setPollStatus("idle");
-        setAvailableServers([]);
-        setSelectedServer("");
-        setSelectedLibraries(new Set());
+        setSelectedLibraryIds(null);
       },
     });
   };
 
-  const toggleLibrary = (title) => {
-    setSelectedLibraries((prev) => {
-      const next = new Set(prev);
-      if (next.has(title)) {
-        next.delete(title);
-      } else {
-        next.add(title);
-      }
+  const toggleLibrary = (id) => {
+    setSelectedLibraryIds((prev) => {
+      const next = new Set(prev || []);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
   const handleSave = () => {
-    const libs = Array.from(selectedLibraries);
-    saveMutation.mutate(
-      { serverName: selectedServer, libraryName: libs[0], availableLibraries: libs },
-      {
-        onSuccess: () => {
-          navigate(`/?library=${encodeURIComponent(libs[0])}&scan=all`);
-        },
-      }
-    );
+    const ids = Array.from(selected);
+    saveSelection.mutate(ids, {
+      onSuccess: (res) => {
+        const target = res?.activeLibraryId || ids[0];
+        if (target) navigate(`/?library=${encodeURIComponent(target)}&scan=all`);
+      },
+    });
   };
 
-  const isConnected = savedSettings?.configured && savedSettings?.serverName && savedSettings?.libraryName;
   const isPolling = pollStatus === "polling";
-  const isApproved = pollStatus === "approved";
 
   return (
     <div className="max-w-2xl">
       <PageHeader title="Settings" />
 
-      {/* Plex Connection Card */}
       <div className="bg-background-secondary border-2 border-border rounded-base p-6 shadow-base">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-heading text-foreground">Plex Connection</h2>
-          {isConnected ? (
+          {configured ? (
             <span className="flex items-center gap-1.5 px-3 py-1 bg-main text-main-foreground rounded-base border-2 border-border text-sm font-heading">
               <CheckCircle className="w-4 h-4" />
               Connected
@@ -154,46 +139,14 @@ function SettingsPage() {
           )}
         </div>
 
-        {/* Connected state: locked display + disconnect */}
-        {isConnected && !isApproved && (
-          <div className="mb-6 p-4 bg-background border-2 border-border rounded-base">
-            <p className="text-sm text-foreground/70 mb-1">
-              Server: <span className="font-heading text-foreground">{savedSettings.serverName}</span>
-            </p>
-            <p className="text-sm text-foreground/70 mb-3">
-              Library: <span className="font-heading text-foreground">{savedSettings.libraryName}</span>
-            </p>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleDisconnect}
-              disabled={disconnectMutation.isPending}
-            >
-              {disconnectMutation.isPending ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  Deleting…
-                </span>
-              ) : (
-                "Delete"
-              )}
-            </Button>
-          </div>
-        )}
-
-        {/* OAuth sign-in button (only when not connected and not in OAuth flow) */}
-        {!isConnected && !isPolling && !isApproved && (
-          <div className="mb-6">
-            {pollError && (
-              <p className="text-sm text-red-500 mb-3">{pollError}</p>
-            )}
+        {/* Sign in (not configured, not mid-OAuth) */}
+        {!configured && !isPolling && (
+          <div className="mb-2">
+            {pollError && <p className="text-sm text-red-500 mb-3">{pollError}</p>}
             {startOAuthMutation.isError && (
               <p className="text-sm text-red-500 mb-3">{startOAuthMutation.error?.message}</p>
             )}
-            <Button
-              onClick={handleSignInWithPlex}
-              disabled={startOAuthMutation.isPending}
-            >
+            <Button onClick={handleSignInWithPlex} disabled={startOAuthMutation.isPending}>
               {startOAuthMutation.isPending ? (
                 <span className="flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -206,9 +159,9 @@ function SettingsPage() {
           </div>
         )}
 
-        {/* Polling state */}
+        {/* Polling */}
         {isPolling && (
-          <div className="mb-6 p-4 bg-background border-2 border-border rounded-base space-y-3">
+          <div className="mb-2 p-4 bg-background border-2 border-border rounded-base space-y-3">
             <div className="flex items-center gap-2 text-sm font-heading text-foreground">
               <Loader2 className="w-4 h-4 animate-spin" />
               Waiting for Plex authorization…
@@ -222,91 +175,77 @@ function SettingsPage() {
           </div>
         )}
 
-        {/* Step 2: Server selector (after OAuth approval) */}
-        {isApproved && availableServers.length > 0 && (
-          <div className="mb-4">
-            <label className="block text-sm font-heading text-foreground mb-1">
-              Plex Server
-            </label>
-            <select
-              value={selectedServer}
-              onChange={(e) => {
-                setSelectedServer(e.target.value);
-                setSelectedLibraries(new Set());
-              }}
-              className={cn(
-                "w-full px-3 py-2 bg-background border-2 border-border rounded-base",
-                "text-foreground focus:outline-none focus:border-main"
-              )}
-            >
-              <option value="">Select a server…</option>
-              {availableServers.map((s) => (
-                <option key={s.clientIdentifier} value={s.name}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        {/* Configured: account + per-server library checkboxes */}
+        {configured && (
+          <>
+            <p className="text-sm text-foreground/70 mb-4">
+              Signed in{settings.username ? ` as ${settings.username}` : ""}. Choose which
+              libraries to manage across your servers.
+            </p>
 
-        {/* Step 3: Library selector (checkboxes) */}
-        {isApproved && selectedServer && (
-          <div className="mb-6">
-            <label className="block text-sm font-heading text-foreground mb-1">
-              Music Libraries
-            </label>
-            {librariesLoading ? (
-              <div className="flex items-center gap-2 text-sm text-foreground/60">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Loading libraries…
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {availableLibraries.map((lib) => (
-                  <label
-                    key={lib.key}
-                    className={cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-base border-2 cursor-pointer transition-colors",
-                      selectedLibraries.has(lib.title)
-                        ? "border-main bg-main/10"
-                        : "border-border bg-background hover:border-foreground/30"
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedLibraries.has(lib.title)}
-                      onChange={() => toggleLibrary(lib.title)}
-                      className="accent-main w-4 h-4"
-                    />
-                    <span className="text-foreground font-heading text-sm">{lib.title}</span>
-                  </label>
-                ))}
-              </div>
+            {servers.length === 0 && (
+              <p className="text-sm text-foreground/60 mb-4">No servers found on this account.</p>
             )}
-          </div>
-        )}
 
-        {/* Save button */}
-        {isApproved && selectedServer && selectedLibraries.size > 0 && (
-          <div className="flex items-center gap-4 pt-2 border-t-2 border-border">
-            <Button
-              onClick={handleSave}
-              disabled={saveMutation.isPending}
-            >
-              {saveMutation.isPending ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Saving…
-                </span>
-              ) : (
-                "Save & Start Scan"
+            {servers.map((server) => (
+              <div key={server.id} className="mb-4">
+                <div className="text-sm font-heading text-foreground/80 mb-2">{server.name}</div>
+                {server.libraries.length === 0 ? (
+                  <p className="text-sm text-foreground/50 pl-1">No music libraries on this server.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {server.libraries.map((lib) => (
+                      <label
+                        key={lib.id}
+                        className={cn(
+                          "flex items-center gap-3 px-3 py-2 rounded-base border-2 cursor-pointer transition-colors",
+                          selected.has(lib.id)
+                            ? "border-main bg-main/10"
+                            : "border-border bg-background hover:border-foreground/30"
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected.has(lib.id)}
+                          onChange={() => toggleLibrary(lib.id)}
+                          className="accent-main w-4 h-4"
+                        />
+                        <span className="text-foreground font-heading text-sm">{lib.title}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div className="flex items-center gap-4 pt-3 border-t-2 border-border">
+              <Button onClick={handleSave} disabled={saveSelection.isPending || selected.size === 0}>
+                {saveSelection.isPending ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Saving…
+                  </span>
+                ) : (
+                  "Save & Start Scan"
+                )}
+              </Button>
+
+              <Button variant="default" onClick={handleDisconnect} disabled={disconnectMutation.isPending}>
+                {disconnectMutation.isPending ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Disconnecting…
+                  </span>
+                ) : (
+                  "Disconnect"
+                )}
+              </Button>
+
+              {saveSelection.isError && (
+                <span className="text-sm text-red-500">{saveSelection.error?.message}</span>
               )}
-            </Button>
-
-            {saveMutation.isError && (
-              <span className="text-sm text-red-500">{saveMutation.error?.message}</span>
-            )}
-          </div>
+            </div>
+          </>
         )}
       </div>
     </div>
