@@ -18,16 +18,34 @@ export async function apiJson(path, options = {}) {
   if (activeLibraryHeader) {
     headers['X-Active-Library'] = activeLibraryHeader;
   }
-  const resp = await fetch(`${API_BASE}${path}`, { ...options, headers });
+
+  let resp;
+  try {
+    resp = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  } catch (networkErr) {
+    // fetch only rejects on a network-level failure: server unreachable, offline,
+    // DNS, CORS. Surface this as a clear connectivity error rather than a generic one.
+    const err = new Error("Can't reach the server. Is the backend running?");
+    err.isConnectivity = true;
+    err.cause = networkErr;
+    throw err;
+  }
+
   if (!resp.ok) {
     let message = resp.statusText;
+    let body = null;
     try {
-      const data = await resp.json();
-      message = data?.error || data?.message || message;
+      body = await resp.json();
+      message = body?.error || body?.message || message;
     } catch {
-      // Ignore JSON parsing errors and use the status text
+      // Non-JSON body (e.g. the dev proxy's plain-text error when the backend is down)
     }
-    throw new Error(message);
+    const err = new Error(message || `Request failed (${resp.status})`);
+    err.status = resp.status;
+    err.requiresSetup = !!body?.requiresSetup;
+    // The Vite dev proxy returns 502/503/504 when the backend is unreachable.
+    err.isConnectivity = resp.status === 502 || resp.status === 503 || resp.status === 504;
+    throw err;
   }
   return resp.json();
 }

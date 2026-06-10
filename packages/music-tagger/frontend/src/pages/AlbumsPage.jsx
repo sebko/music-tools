@@ -36,6 +36,7 @@ import {
   ArrowDown,
   ZoomIn,
   RefreshCw,
+  AlertTriangle,
 } from "lucide-react";
 
 function AlbumsPage() {
@@ -68,7 +69,7 @@ function AlbumsPage() {
   const { data: plexSettings } = usePlexSettings();
   const plexConnected = !!plexSettings?.configured;
 
-  const { data, isLoading, isError, error, isPlaceholderData } = useAlbums(
+  const { data, isLoading, isError, error, isPlaceholderData, refetch } = useAlbums(
     page,
     limit,
     sortBy,
@@ -267,11 +268,21 @@ function AlbumsPage() {
 
   let mainContent;
   if (isError) {
+    const isConnectivity = error?.isConnectivity;
     mainContent = (
-      <UnmatchedView
-        onButtonClick={handleStartScan}
-        isStarting={isStartingScan}
-        buttonText="Rescan"
+      <EmptyState
+        icon={<AlertTriangle className="w-16 h-16 text-red-500" />}
+        heading={isConnectivity ? "Can't reach the server" : "Couldn't load albums"}
+        description={
+          error?.message ||
+          "Something went wrong loading this library. Please try again."
+        }
+        action={
+          <Button onClick={() => refetch()} variant="primary" size="lg">
+            <RefreshCw className="w-5 h-5" />
+            Retry
+          </Button>
+        }
       />
     );
   } else if (albums.length === 0) {
@@ -387,7 +398,9 @@ function AlbumsPage() {
         title="Albums"
         subtitle={
           isError
-            ? "We were unable to load your library. Try running a scan to rebuild it."
+            ? error?.isConnectivity
+              ? "Can't reach the server."
+              : `Couldn't load albums: ${error?.message || "unknown error"}`
             : pagination.total === 0
             ? searchQuery
               ? `No albums found for "${searchQuery}"`

@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { ThemeToggle, AppShell, NavLink } from "@dj-tools/my-component-library";
 import { Settings } from "lucide-react";
 import LibraryToggle from "./LibraryToggle";
+import ConnectivityBanner from "./ConnectivityBanner";
 
 function Layout({ children }) {
   const location = useLocation();
@@ -44,6 +45,7 @@ function Layout({ children }) {
         </div>
       }
     >
+      <ConnectivityBanner />
       {children}
     </AppShell>
   );
