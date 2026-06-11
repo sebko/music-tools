@@ -66,7 +66,7 @@ export function parseDuplicatesOutput(stdout) {
  * Penalizes date-stamp artifacts ("04.55.09"), copy suffixes (" 2."), and
  * excessive length — common in Dropbox conflict copies and timestamped backups.
  */
-function pathCleanlinessScore(path) {
+export function pathCleanlinessScore(path) {
   const filename = path.split("/").pop();
   let score = 0;
   // Penalize repeated date-stamp patterns like "04.55.09"

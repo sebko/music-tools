@@ -1,3 +1,0 @@
-mutagen>=1.47.0
-pillow>=12.1.0
-watchdog>=4.0.0

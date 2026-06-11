@@ -7,6 +7,7 @@ import { runBeet, runBeetStreaming } from "./beetsRunner.js";
 import { enrichTracks as claudeEnrichTracks } from "./trackEnrichmentService.js";
 import { runProcessingPhases } from "./libraryProcessingPipeline.js";
 import { findLibraryMatches } from "./duplicateMatcher.js";
+import { findIntraBatchDuplicateGroups } from "./intraBatchMatcher.js";
 import {
   SINGLES_VENV_PY,
   TAG_SCRIPT,
@@ -564,55 +565,168 @@ export function runInboxImport(operationsMap, opId, inboxPath, libraryPath, pend
         );
       }
 
+      // Persist file metadata + the working set so the intra-batch and library
+      // duplicate checks (which run as separate, resumable phases) can read them
+      // back without re-probing every file.
+      operationsMap.set(opId, {
+        ...operationsMap.get(opId),
+        workingFiles,
+        fileInfos: Object.fromEntries(fileInfos),
+      });
+
+      // First duplicate screen: collapse copies of the same track that arrived
+      // together in this batch, before we ever compare against the library.
       patch({
-        phase: "checking-duplicates",
+        phase: "checking-intra-batch",
         processed: 0,
         total: workingFiles.length,
         currentFile: null,
       });
-      const duplicateMatches = [];
-      let dupChecked = 0;
-      for (const f of workingFiles) {
-        const info = fileInfos.get(f);
-        patch({ processed: dupChecked, currentFile: basename(f) });
-        try {
-          const matches = await findLibraryMatches({ artist: info.artist, title: info.title });
-          if (matches && matches.length > 0) {
-            duplicateMatches.push({
-              file: f,
-              artist: info.artist,
-              title: info.title,
-              album: info.album,
-              bitrate: info.bitrate,
-              format: info.format,
-              length: info.length,
-              matches,
-            });
-          }
-        } catch (err) {
-          appendOutput(`  Duplicate check failed for ${basename(f)}: ${err.message}\n`);
-        }
-        dupChecked += 1;
-        patch({ processed: dupChecked });
-      }
-      patch({ currentFile: null });
+      const intraBatchGroups = findIntraBatchDuplicateGroups(
+        workingFiles.map((f) => ({ file: f, info: fileInfos.get(f) })),
+      );
+      patch({ processed: workingFiles.length, currentFile: null });
 
-      operationsMap.set(opId, {
-        ...operationsMap.get(opId),
-        workingFiles,
-      });
-
-      if (duplicateMatches.length > 0) {
+      if (intraBatchGroups.length > 0) {
         patch({
-          status: "awaiting_duplicate_review",
-          phase: "awaiting-duplicate-review",
-          duplicateMatches,
+          status: "awaiting_intra_batch_review",
+          phase: "awaiting-intra-batch-review",
+          intraBatchGroups,
           currentFile: null,
         });
         return;
       }
 
-      await runConversionThroughEnrichment(operationsMap, opId);
+      await runLibraryDuplicateCheck(operationsMap, opId);
+    } catch (err) {
+      const current = operationsMap.get(opId) || {};
+      operationsMap.set(opId, {
+        ...current,
+        status: "failed",
+        error: err.message,
+        completedAt: new Date().toISOString(),
+      });
+    }
+  })();
+}
+
+/**
+ * Second duplicate screen: compare each surviving inbox file against the
+ * existing beets library by (artist, title). Reads `workingFiles` and
+ * `fileInfos` from operation state so it can run both straight after the
+ * intra-batch check and after the user resolves intra-batch duplicates.
+ * Pauses as `awaiting_duplicate_review` if any matches are found, otherwise
+ * chains into the convert → move → tag → enrich pipeline.
+ */
+async function runLibraryDuplicateCheck(operationsMap, opId) {
+  const op = operationsMap.get(opId);
+  const { patch, appendOutput } = createOpHelpers(operationsMap, opId);
+  const workingFiles = op.workingFiles || [];
+  const fileInfos = op.fileInfos || {};
+
+  patch({
+    status: "running",
+    phase: "checking-duplicates",
+    processed: 0,
+    total: workingFiles.length,
+    currentFile: null,
+  });
+  const duplicateMatches = [];
+  let dupChecked = 0;
+  for (const f of workingFiles) {
+    const info = fileInfos[f];
+    patch({ processed: dupChecked, currentFile: basename(f) });
+    if (info) {
+      try {
+        const matches = await findLibraryMatches({ artist: info.artist, title: info.title });
+        if (matches && matches.length > 0) {
+          duplicateMatches.push({
+            file: f,
+            artist: info.artist,
+            title: info.title,
+            album: info.album,
+            bitrate: info.bitrate,
+            format: info.format,
+            length: info.length,
+            matches,
+          });
+        }
+      } catch (err) {
+        appendOutput(`  Duplicate check failed for ${basename(f)}: ${err.message}\n`);
+      }
+    }
+    dupChecked += 1;
+    patch({ processed: dupChecked });
+  }
+  patch({ currentFile: null });
+
+  if (duplicateMatches.length > 0) {
+    patch({
+      status: "awaiting_duplicate_review",
+      phase: "awaiting-duplicate-review",
+      duplicateMatches,
+      currentFile: null,
+    });
+    return;
+  }
+
+  await runConversionThroughEnrichment(operationsMap, opId);
+}
+
+/**
+ * Resume an inbox import that paused after the intra-batch duplicate check.
+ * `decisions` is keyed by inbox file path:
+ *   { [filePath]: { action: "keep" | "delete" } }
+ * Files marked `delete` are dropped from the working set and unlinked from the
+ * inbox (these are redundant copies the user chose not to keep). Anything not
+ * named defaults to `keep`. The surviving files then flow into the library
+ * duplicate check.
+ */
+export function resumeInboxImportAfterIntraBatchReview(operationsMap, opId, decisions) {
+  const op = operationsMap.get(opId);
+  if (!op) throw new Error("Operation not found");
+  if (op.status !== "awaiting_intra_batch_review") {
+    throw new Error(`Operation is not awaiting intra-batch review (status=${op.status})`);
+  }
+  if (!Array.isArray(op.workingFiles)) {
+    throw new Error("Operation is missing workingFiles — cannot resume");
+  }
+
+  const { patch, appendOutput } = createOpHelpers(operationsMap, opId);
+  operationsMap.set(opId, { ...op, status: "running" });
+
+  (async () => {
+    try {
+      const filteredFiles = [];
+      const fileInfos = { ...(op.fileInfos || {}) };
+      let deleted = 0;
+      for (const f of op.workingFiles) {
+        const decision = decisions?.[f] || { action: "keep" };
+        if (decision.action === "delete") {
+          appendOutput(`Removing intra-batch duplicate (deleting from inbox): ${basename(f)}\n`);
+          try {
+            unlinkSync(f);
+          } catch (err) {
+            appendOutput(`  Warning: failed to delete ${basename(f)}: ${err.message}\n`);
+          }
+          delete fileInfos[f];
+          deleted += 1;
+          continue;
+        }
+        filteredFiles.push(f);
+      }
+      if (deleted > 0) {
+        appendOutput(`Removed ${deleted} duplicate file(s) from this import.\n`);
+      }
+
+      operationsMap.set(opId, {
+        ...operationsMap.get(opId),
+        workingFiles: filteredFiles,
+        fileInfos,
+        intraBatchGroups: null,
+      });
+
+      await runLibraryDuplicateCheck(operationsMap, opId);
     } catch (err) {
       const current = operationsMap.get(opId) || {};
       operationsMap.set(opId, {

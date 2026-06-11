@@ -7,7 +7,7 @@ const FIELD_FORMAT = "$id|$path|$artist|$title|$album|$bitrate|$format|$length|$
 // artist field, and ampersands. Library side stays untouched — beets'
 // own substring match on the normalised query catches both shapes
 // ("Drake feat. Future" and "Drake" both substring-match "Drake").
-function normalizeForQuery(value) {
+export function normalizeForQuery(value) {
   return (value || "")
     .toLowerCase()
     .replace(/\(.*?\)/g, " ")

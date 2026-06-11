@@ -17,6 +17,7 @@ import {
   runInboxImport,
   resumeInboxImport,
   resumeInboxImportAfterDuplicateReview,
+  resumeInboxImportAfterIntraBatchReview,
 } from "./services/inboxImportRunner.js";
 import {
   enrichTracks,
@@ -974,6 +975,48 @@ app.post("/api/inbox/import/:id/resume-duplicates", (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     console.error("Error resuming inbox import (duplicates):", error);
+    res.status(500).json({ error: error.message || "Failed to resume import" });
+  }
+});
+
+app.post("/api/inbox/import/:id/resume-intra-batch", (req, res) => {
+  const op = operations.get(req.params.id);
+  if (!op) return res.status(404).json({ error: "Operation not found" });
+  if (op.status !== "awaiting_intra_batch_review") {
+    return res.status(400).json({
+      error: `Operation is not awaiting intra-batch review (status=${op.status})`,
+    });
+  }
+  const { decisions } = req.body || {};
+  if (!decisions || typeof decisions !== "object") {
+    return res.status(400).json({ error: "decisions object is required" });
+  }
+  const validActions = new Set(["keep", "delete"]);
+  for (const [filePath, decision] of Object.entries(decisions)) {
+    if (!decision || !validActions.has(decision.action)) {
+      return res.status(400).json({
+        error: `Invalid action for ${filePath}: ${decision?.action}`,
+      });
+    }
+  }
+  // Every duplicate group must retain at least one file — refuse a set of
+  // decisions that would delete an entire group.
+  for (const group of op.intraBatchGroups || []) {
+    const survivors = group.files.filter(
+      (f) => (decisions[f.file]?.action || "keep") !== "delete",
+    );
+    if (survivors.length === 0) {
+      return res.status(400).json({
+        error: `At least one copy of "${group.label}" must be kept`,
+      });
+    }
+  }
+  try {
+    closeDb();
+    resumeInboxImportAfterIntraBatchReview(operations, req.params.id, decisions);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("Error resuming inbox import (intra-batch):", error);
     res.status(500).json({ error: error.message || "Failed to resume import" });
   }
 });

@@ -21,13 +21,17 @@ import {
   runInboxImport,
   resumeInboxImport,
   resumeInboxImportAfterDuplicateReview,
+  resumeInboxImportAfterIntraBatchReview,
 } from "../api/inbox";
 import { useOperationPolling } from "../hooks/useOperationPolling";
 import EnrichmentCard from "../components/EnrichmentCard";
 import DuplicateReviewCard from "../components/DuplicateReviewCard";
+import IntraBatchReviewCard from "../components/IntraBatchReviewCard";
 
 const PHASE_LABELS = {
   validating: "Validating inbox tags",
+  "checking-intra-batch": "Checking for duplicates in this import",
+  "awaiting-intra-batch-review": "Resolve duplicates in this import",
   "checking-duplicates": "Checking for duplicates in library",
   "awaiting-duplicate-review": "Review duplicates",
   "removing-duplicates": "Removing replaced library tracks",
@@ -58,11 +62,23 @@ function defaultDecisions(duplicateMatches) {
   return out;
 }
 
+// Default: keep the recommended best copy in each group, delete the rest.
+function defaultIntraBatchDecisions(groups) {
+  const out = {};
+  for (const group of groups || []) {
+    for (const f of group.files) {
+      out[f.file] = { action: f.isKeeper ? "keep" : "delete" };
+    }
+  }
+  return out;
+}
+
 function InboxPage() {
   const queryClient = useQueryClient();
   const [operationId, setOperationId] = useState(null);
   const [showLog, setShowLog] = useState(false);
   const [duplicateDecisions, setDuplicateDecisions] = useState({});
+  const [intraBatchDecisions, setIntraBatchDecisions] = useState({});
 
   const { data: inbox, isLoading } = useQuery({
     queryKey: ["inbox-status"],
@@ -81,10 +97,12 @@ function InboxPage() {
   const hasStarted = !!operationId || startMutation.isPending;
   const isAwaitingReview = status === "awaiting_review";
   const isAwaitingDuplicateReview = status === "awaiting_duplicate_review";
+  const isAwaitingIntraBatchReview = status === "awaiting_intra_batch_review";
   const isRunning = status === "running" || (hasStarted && !operation);
   const isComplete = status === "completed";
   const isFailed = status === "failed" || startMutation.isError;
-  const isPaused = isAwaitingReview || isAwaitingDuplicateReview;
+  const isPaused =
+    isAwaitingReview || isAwaitingDuplicateReview || isAwaitingIntraBatchReview;
 
   // Initialise per-file decisions when the operation enters duplicate-review.
   // Re-init only when the underlying duplicate set changes — re-renders
@@ -101,6 +119,20 @@ function InboxPage() {
       setDuplicateDecisions({});
     }
   }, [isAwaitingDuplicateReview, operation?.duplicateMatches]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Same lifecycle for the intra-batch (first) duplicate screen.
+  useEffect(() => {
+    if (isAwaitingIntraBatchReview && operation?.intraBatchGroups) {
+      setIntraBatchDecisions((prev) =>
+        Object.keys(prev).length === 0
+          ? defaultIntraBatchDecisions(operation.intraBatchGroups)
+          : prev,
+      );
+    }
+    if (!isAwaitingIntraBatchReview && Object.keys(intraBatchDecisions).length > 0) {
+      setIntraBatchDecisions({});
+    }
+  }, [isAwaitingIntraBatchReview, operation?.intraBatchGroups]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Holds an imperative handle for each EnrichmentCard rendered below, so
   // "Continue import" can apply any unsaved selections before resuming the
@@ -129,12 +161,32 @@ function InboxPage() {
     },
   });
 
+  const resumeIntraBatchMutation = useMutation({
+    mutationFn: () =>
+      resumeInboxImportAfterIntraBatchReview(operationId, intraBatchDecisions),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["operation", operationId] });
+    },
+  });
+
   const handleDecisionChange = (filePath, decision) => {
     setDuplicateDecisions((prev) => ({ ...prev, [filePath]: decision }));
   };
 
+  const handleIntraBatchChange = (filePath, decision) => {
+    setIntraBatchDecisions((prev) => ({ ...prev, [filePath]: decision }));
+  };
+
   const allReplaceDecisionsValid = Object.values(duplicateDecisions).every((d) =>
     d.action === "replace" ? Array.isArray(d.replaceIds) && d.replaceIds.length > 0 : true,
+  );
+
+  // Every intra-batch group must keep at least one copy.
+  const allIntraBatchGroupsValid = (operation?.intraBatchGroups || []).every(
+    (group) =>
+      group.files.some(
+        (f) => (intraBatchDecisions[f.file]?.action || "keep") !== "delete",
+      ),
   );
 
   if (isComplete && operationId) {
@@ -157,9 +209,11 @@ function InboxPage() {
   const handleReset = () => {
     setOperationId(null);
     setDuplicateDecisions({});
+    setIntraBatchDecisions({});
     startMutation.reset();
     resumeMutation.reset();
     resumeDupMutation.reset();
+    resumeIntraBatchMutation.reset();
   };
 
   if (isLoading) {
@@ -221,6 +275,50 @@ function InboxPage() {
                 : phaseLabel}
           </h2>
         </div>
+
+        {isAwaitingIntraBatchReview && (
+          <div className="space-y-4">
+            <p className="text-sm text-foreground/70">
+              {(operation?.intraBatchGroups?.length || 0)} set
+              {(operation?.intraBatchGroups?.length || 0) === 1 ? "" : "s"} of
+              duplicate files arrived together in this import. The best copy
+              (★) is kept by default and the rest are deleted from the inbox —
+              adjust any file before continuing.
+            </p>
+            <div className="space-y-4">
+              {(operation?.intraBatchGroups || []).map((group) => (
+                <IntraBatchReviewCard
+                  key={group.key}
+                  group={group}
+                  decisions={intraBatchDecisions}
+                  onChange={handleIntraBatchChange}
+                  inboxPath={operation?.inboxPath || inboxPath || ""}
+                />
+              ))}
+            </div>
+            {resumeIntraBatchMutation.isError && (
+              <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
+                <AlertCircle className="w-3 h-3 shrink-0" />
+                {resumeIntraBatchMutation.error?.message}
+              </div>
+            )}
+            <div className="flex justify-end pt-2">
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => resumeIntraBatchMutation.mutate()}
+                disabled={resumeIntraBatchMutation.isPending || !allIntraBatchGroupsValid}
+              >
+                {resumeIntraBatchMutation.isPending ? (
+                  <Loader className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                Continue import
+              </Button>
+            </div>
+          </div>
+        )}
 
         {isAwaitingDuplicateReview && (
           <div className="space-y-4">

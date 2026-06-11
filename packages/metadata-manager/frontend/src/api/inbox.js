@@ -48,3 +48,19 @@ export async function resumeInboxImportAfterDuplicateReview(operationId, decisio
   }
   return response.json();
 }
+
+export async function resumeInboxImportAfterIntraBatchReview(operationId, decisions) {
+  const response = await fetch(
+    `${API_BASE}/inbox/import/${operationId}/resume-intra-batch`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decisions }),
+    },
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.error || "Failed to resume inbox import");
+  }
+  return response.json();
+}
