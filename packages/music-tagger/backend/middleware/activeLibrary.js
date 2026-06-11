@@ -7,7 +7,7 @@ const CACHE_TTL = 60_000; // 1 minute
 
 const LIBRARY_INCLUDE = { server: { include: { account: true } } };
 
-async function loadLibrary(libraryId) {
+export async function loadLibrary(libraryId) {
   if (!libraryId) return null;
   const cached = libraryCache.get(libraryId);
   if (cached && Date.now() - cached.at < CACHE_TTL) return cached.library;

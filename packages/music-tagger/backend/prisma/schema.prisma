@@ -17,6 +17,29 @@ enum MatchStatus {
   SYNCED
 }
 
+enum SwipeDecision {
+  KEEP
+  SKIP
+}
+
+enum CopyStatus {
+  PENDING
+  COPIED
+  SKIPPED_EXISTS
+  FAILED
+}
+
+enum DeleteDecision {
+  DELETE
+  SKIP
+}
+
+enum DeleteStatus {
+  PENDING
+  DELETED
+  FAILED
+}
+
 // AUTH: a Plex login. One token grants access to owned + shared servers.
 model PlexAccount {
   id        String   @id @default(cuid())
@@ -60,13 +83,63 @@ model PlexLibrary {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  server     PlexServer    @relation(fields: [serverId], references: [id], onDelete: Cascade)
-  albums     Album[]
-  appSetting AppSettings[]
+  server              PlexServer       @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  albums              Album[]
+  appSetting          AppSettings[]
+  swipesAsSource      FavouriteSwipe[] @relation("swipeSource")
+  swipesAsDestination FavouriteSwipe[] @relation("swipeDest")
+  deletionSwipes      DeletionSwipe[]
 
   @@unique([serverId, sectionKey])
   @@index([serverId])
   @@map("plex_libraries")
+}
+
+// FAVOURITES WIZARD: one judged album per (source, destination) library pair.
+// Title/artist/location are snapshotted at swipe time so the copy step and
+// summary work without re-querying Plex.
+model FavouriteSwipe {
+  id                   String        @id @default(cuid())
+  sourceLibraryId      String        @map("source_library_id")
+  destinationLibraryId String        @map("destination_library_id")
+  ratingKey            String        @map("rating_key") // album ratingKey in the SOURCE library
+  title                String
+  artist               String
+  location             String? // album directory path on disk (from Plex)
+  decision             SwipeDecision
+  copyStatus           CopyStatus?   @map("copy_status") // PENDING for KEEP, null for SKIP
+  copyError            String?       @map("copy_error")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+
+  sourceLibrary      PlexLibrary @relation("swipeSource", fields: [sourceLibraryId], references: [id], onDelete: Cascade)
+  destinationLibrary PlexLibrary @relation("swipeDest", fields: [destinationLibraryId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceLibraryId, destinationLibraryId, ratingKey])
+  @@index([sourceLibraryId, destinationLibraryId, decision])
+  @@map("favourite_swipes")
+}
+
+// ALBUM DELETER: one judged album per library. DELETE marks the album folder for
+// moving to the volume Trash (batched, user-confirmed); SKIP leaves it alone.
+model DeletionSwipe {
+  id           String         @id @default(cuid())
+  libraryId    String         @map("library_id")
+  ratingKey    String         @map("rating_key")
+  title        String
+  artist       String
+  location     String? // album directory path on disk (from Plex)
+  decision     DeleteDecision
+  deleteStatus DeleteStatus?  @map("delete_status") // PENDING for DELETE, null for SKIP
+  deleteError  String?        @map("delete_error")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  library PlexLibrary @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+
+  @@unique([libraryId, ratingKey])
+  @@index([libraryId, decision])
+  @@map("deletion_swipes")
 }
 
 // App-level presentation state (kept out of the domain tables).

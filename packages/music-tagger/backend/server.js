@@ -138,7 +138,13 @@ app.use((req, res, next) => {
 });
 
 // Active library middleware - attaches req.library / req.server from header or DB
-import { activeLibraryMiddleware, invalidateLibraryCache } from "./middleware/activeLibrary.js";
+import { activeLibraryMiddleware, invalidateLibraryCache, loadLibrary } from "./middleware/activeLibrary.js";
+import {
+  getDestinationAlbumKeySet,
+  normalizeKey,
+  runFavouritesCopy,
+} from "./services/favouritesWizard.js";
+import { runDeletion } from "./services/deletionWizard.js";
 app.use(activeLibraryMiddleware);
 
 // Resolve the connected Plex server for the request's active library.
@@ -2887,6 +2893,535 @@ app.post("/api/plex/restore-dates/apply", async (req, res) => {
   } catch (error) {
     console.error("Error applying restore dates:", error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================
+// Favourites Wizard - swipe game + batched album-folder copy
+// ============================================================
+
+// Copy operation state (same pattern as bulkScanState)
+let favouritesCopyState = {
+  isCopying: false,
+  current: 0,
+  total: 0,
+  copied: 0,
+  skippedExists: 0,
+  failed: 0,
+  currentAlbum: null,
+  shouldStop: false,
+  error: null,
+  scanTriggered: false,
+  results: [],
+  sourceLibraryId: null,
+  destinationLibraryId: null,
+};
+
+/**
+ * Resolve and validate the source/destination pair every wizard route needs.
+ * Sends a 400 and returns null on any problem. Ids come from query or body.
+ */
+async function resolveWizardLibraries(req, res) {
+  const sourceLibraryId = req.query.sourceLibraryId || req.body?.sourceLibraryId;
+  const destinationLibraryId = req.query.destinationLibraryId || req.body?.destinationLibraryId;
+
+  if (!sourceLibraryId || !destinationLibraryId) {
+    res.status(400).json({ error: "sourceLibraryId and destinationLibraryId are required" });
+    return null;
+  }
+  if (sourceLibraryId === destinationLibraryId) {
+    res.status(400).json({ error: "Source and destination must be different libraries" });
+    return null;
+  }
+  const [sourceLibrary, destLibrary] = await Promise.all([
+    loadLibrary(sourceLibraryId),
+    loadLibrary(destinationLibraryId),
+  ]);
+  if (!sourceLibrary || !destLibrary) {
+    res.status(400).json({ error: "Source or destination library not found" });
+    return null;
+  }
+  return { sourceLibrary, destLibrary };
+}
+
+// Next batch of unjudged albums from the source (judging advances the feed)
+app.get("/api/favourites-wizard/candidates", async (req, res) => {
+  try {
+    const libs = await resolveWizardLibraries(req, res);
+    if (!libs) return;
+    const { sourceLibrary, destLibrary } = libs;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+
+    const sourceServer = await getServerConnection(sourceLibrary.server);
+    const sourceSection = await getLibrarySection(sourceLibrary);
+    const [{ albums, pagination }, swipes, destKeys] = await Promise.all([
+      getPlexAlbums(sourceServer, sourceSection, {
+        limit: 100000,
+        sort: "titleSort",
+        sortDirection: "asc",
+      }),
+      prisma.favouriteSwipe.findMany({
+        where: { sourceLibraryId: sourceLibrary.id, destinationLibraryId: destLibrary.id },
+        select: { ratingKey: true, decision: true },
+      }),
+      getDestinationAlbumKeySet(destLibrary),
+    ]);
+
+    const judgedKeys = new Set(swipes.map(s => s.ratingKey));
+    const kept = swipes.filter(s => s.decision === "KEEP").length;
+
+    let hiddenInDestination = 0;
+    const unjudged = albums.filter(album => {
+      if (judgedKeys.has(String(album.id))) return false;
+      if (destKeys.has(normalizeKey(album.artist, album.title))) {
+        hiddenInDestination++;
+        return false;
+      }
+      return true;
+    });
+
+    res.json({
+      candidates: unjudged.slice(0, limit).map(a => ({
+        ratingKey: String(a.id),
+        title: a.title,
+        artist: a.artist,
+        year: a.year,
+        artworkUrl: a.artworkUrl,
+        location: a.location,
+      })),
+      remaining: unjudged.length,
+      totals: {
+        sourceTotal: pagination.total,
+        judged: judgedKeys.size,
+        kept,
+        skipped: judgedKeys.size - kept,
+        hiddenInDestination,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching favourites candidates:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Record a swipe (KEEP or SKIP)
+app.post("/api/favourites-wizard/decisions", async (req, res) => {
+  try {
+    const libs = await resolveWizardLibraries(req, res);
+    if (!libs) return;
+    const { sourceLibrary, destLibrary } = libs;
+    const { ratingKey, decision, title, artist, location } = req.body || {};
+
+    if (!ratingKey || !["KEEP", "SKIP"].includes(decision)) {
+      return res.status(400).json({ error: "ratingKey and a KEEP/SKIP decision are required" });
+    }
+
+    const pairKey = {
+      sourceLibraryId: sourceLibrary.id,
+      destinationLibraryId: destLibrary.id,
+      ratingKey: String(ratingKey),
+    };
+    await prisma.favouriteSwipe.upsert({
+      where: { sourceLibraryId_destinationLibraryId_ratingKey: pairKey },
+      create: {
+        ...pairKey,
+        title: title || "",
+        artist: artist || "",
+        location: location || null,
+        decision,
+        copyStatus: decision === "KEEP" ? "PENDING" : null,
+      },
+      update: {
+        title: title || "",
+        artist: artist || "",
+        location: location || null,
+        decision,
+        copyStatus: decision === "KEEP" ? "PENDING" : null,
+        copyError: null,
+      },
+    });
+
+    const shortlistCount = await prisma.favouriteSwipe.count({
+      where: {
+        sourceLibraryId: sourceLibrary.id,
+        destinationLibraryId: destLibrary.id,
+        decision: "KEEP",
+      },
+    });
+    res.json({ ok: true, shortlistCount });
+  } catch (error) {
+    console.error("Error recording favourites decision:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Undo a swipe (album re-enters the feed)
+app.delete("/api/favourites-wizard/decisions", async (req, res) => {
+  try {
+    const libs = await resolveWizardLibraries(req, res);
+    if (!libs) return;
+    const { sourceLibrary, destLibrary } = libs;
+    const { ratingKey } = req.query;
+    if (!ratingKey) return res.status(400).json({ error: "ratingKey is required" });
+
+    await prisma.favouriteSwipe.deleteMany({
+      where: {
+        sourceLibraryId: sourceLibrary.id,
+        destinationLibraryId: destLibrary.id,
+        ratingKey: String(ratingKey),
+      },
+    });
+    const shortlistCount = await prisma.favouriteSwipe.count({
+      where: {
+        sourceLibraryId: sourceLibrary.id,
+        destinationLibraryId: destLibrary.id,
+        decision: "KEEP",
+      },
+    });
+    res.json({ ok: true, shortlistCount });
+  } catch (error) {
+    console.error("Error undoing favourites decision:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Shortlist + per-status counts (resume info and summary fallback)
+app.get("/api/favourites-wizard/shortlist", async (req, res) => {
+  try {
+    const libs = await resolveWizardLibraries(req, res);
+    if (!libs) return;
+    const { sourceLibrary, destLibrary } = libs;
+
+    const pairWhere = {
+      sourceLibraryId: sourceLibrary.id,
+      destinationLibraryId: destLibrary.id,
+    };
+    const [shortlist, judged] = await Promise.all([
+      prisma.favouriteSwipe.findMany({
+        where: { ...pairWhere, decision: "KEEP" },
+        orderBy: { updatedAt: "asc" },
+      }),
+      prisma.favouriteSwipe.count({ where: pairWhere }),
+    ]);
+
+    const counts = { pending: 0, copied: 0, skippedExists: 0, failed: 0 };
+    for (const row of shortlist) {
+      if (row.copyStatus === "PENDING") counts.pending++;
+      else if (row.copyStatus === "COPIED") counts.copied++;
+      else if (row.copyStatus === "SKIPPED_EXISTS") counts.skippedExists++;
+      else if (row.copyStatus === "FAILED") counts.failed++;
+    }
+    res.json({ shortlist, counts, judged });
+  } catch (error) {
+    console.error("Error fetching favourites shortlist:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Start the batched folder copy (fire-and-forget; poll progress)
+app.post("/api/favourites-wizard/copy", async (req, res) => {
+  try {
+    if (favouritesCopyState.isCopying) {
+      return res.status(409).json({ error: "A favourites copy is already in progress" });
+    }
+    const libs = await resolveWizardLibraries(req, res);
+    if (!libs) return;
+    const { sourceLibrary, destLibrary } = libs;
+
+    // FAILED rows are included so re-running the copy retries them
+    const rows = await prisma.favouriteSwipe.findMany({
+      where: {
+        sourceLibraryId: sourceLibrary.id,
+        destinationLibraryId: destLibrary.id,
+        decision: "KEEP",
+        copyStatus: { in: ["PENDING", "FAILED"] },
+      },
+      orderBy: { updatedAt: "asc" },
+    });
+
+    favouritesCopyState = {
+      isCopying: true,
+      current: 0,
+      total: rows.length,
+      copied: 0,
+      skippedExists: 0,
+      failed: 0,
+      currentAlbum: null,
+      shouldStop: false,
+      error: null,
+      scanTriggered: false,
+      results: [],
+      sourceLibraryId: sourceLibrary.id,
+      destinationLibraryId: destLibrary.id,
+    };
+
+    res.json({ started: true, total: rows.length });
+
+    runFavouritesCopy(favouritesCopyState, sourceLibrary, destLibrary, rows)
+      .catch(err => {
+        console.error("Favourites copy failed:", err);
+        favouritesCopyState.error = err.message;
+      })
+      .finally(() => {
+        favouritesCopyState.isCopying = false;
+        favouritesCopyState.currentAlbum = null;
+      });
+  } catch (error) {
+    console.error("Error starting favourites copy:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Copy progress
+app.get("/api/favourites-wizard/copy/progress", (req, res) => {
+  res.json(favouritesCopyState);
+});
+
+// Cancel copy (stops between albums)
+app.delete("/api/favourites-wizard/copy", (req, res) => {
+  if (favouritesCopyState.isCopying) {
+    favouritesCopyState.shouldStop = true;
+    res.json({ ok: true, message: "Stopping after current album" });
+  } else {
+    res.json({ ok: true, message: "No favourites copy in progress" });
+  }
+});
+
+// ============================================================
+// Album Deleter - swipe game + confirmed move-to-Trash batch
+// ============================================================
+
+let deletionState = {
+  isDeleting: false,
+  current: 0,
+  total: 0,
+  deleted: 0,
+  failed: 0,
+  currentAlbum: null,
+  shouldStop: false,
+  error: null,
+  scanTriggered: false,
+  plexTrashEmptied: false,
+  results: [],
+  libraryId: null,
+};
+
+/** Resolve the library every deleter route needs; 400s and returns null on problems. */
+async function resolveDeleterLibrary(req, res) {
+  const libraryId = req.query.libraryId || req.body?.libraryId;
+  if (!libraryId) {
+    res.status(400).json({ error: "libraryId is required" });
+    return null;
+  }
+  const library = await loadLibrary(libraryId);
+  if (!library) {
+    res.status(400).json({ error: "Library not found" });
+    return null;
+  }
+  return library;
+}
+
+// Next batch of unjudged albums (judging advances the feed)
+app.get("/api/deletion-wizard/candidates", async (req, res) => {
+  try {
+    const library = await resolveDeleterLibrary(req, res);
+    if (!library) return;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+
+    const server = await getServerConnection(library.server);
+    const section = await getLibrarySection(library);
+    const [{ albums, pagination }, swipes] = await Promise.all([
+      getPlexAlbums(server, section, {
+        limit: 100000,
+        sort: "titleSort",
+        sortDirection: "asc",
+      }),
+      prisma.deletionSwipe.findMany({
+        where: { libraryId: library.id },
+        select: { ratingKey: true, decision: true },
+      }),
+    ]);
+
+    const judgedKeys = new Set(swipes.map(s => s.ratingKey));
+    const marked = swipes.filter(s => s.decision === "DELETE").length;
+    const unjudged = albums.filter(album => !judgedKeys.has(String(album.id)));
+
+    res.json({
+      candidates: unjudged.slice(0, limit).map(a => ({
+        ratingKey: String(a.id),
+        title: a.title,
+        artist: a.artist,
+        year: a.year,
+        artworkUrl: a.artworkUrl,
+        location: a.location,
+      })),
+      remaining: unjudged.length,
+      totals: {
+        sourceTotal: pagination.total,
+        judged: judgedKeys.size,
+        kept: marked, // "kept" = albums swiped right (marked for deletion)
+        skipped: judgedKeys.size - marked,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching deletion candidates:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Record a swipe (DELETE or SKIP)
+app.post("/api/deletion-wizard/decisions", async (req, res) => {
+  try {
+    const library = await resolveDeleterLibrary(req, res);
+    if (!library) return;
+    const { ratingKey, decision, title, artist, location } = req.body || {};
+
+    if (!ratingKey || !["DELETE", "SKIP"].includes(decision)) {
+      return res.status(400).json({ error: "ratingKey and a DELETE/SKIP decision are required" });
+    }
+
+    const pairKey = { libraryId: library.id, ratingKey: String(ratingKey) };
+    await prisma.deletionSwipe.upsert({
+      where: { libraryId_ratingKey: pairKey },
+      create: {
+        ...pairKey,
+        title: title || "",
+        artist: artist || "",
+        location: location || null,
+        decision,
+        deleteStatus: decision === "DELETE" ? "PENDING" : null,
+      },
+      update: {
+        title: title || "",
+        artist: artist || "",
+        location: location || null,
+        decision,
+        deleteStatus: decision === "DELETE" ? "PENDING" : null,
+        deleteError: null,
+      },
+    });
+
+    const shortlistCount = await prisma.deletionSwipe.count({
+      where: { libraryId: library.id, decision: "DELETE" },
+    });
+    res.json({ ok: true, shortlistCount });
+  } catch (error) {
+    console.error("Error recording deletion decision:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Undo a swipe (album re-enters the feed)
+app.delete("/api/deletion-wizard/decisions", async (req, res) => {
+  try {
+    const library = await resolveDeleterLibrary(req, res);
+    if (!library) return;
+    const { ratingKey } = req.query;
+    if (!ratingKey) return res.status(400).json({ error: "ratingKey is required" });
+
+    await prisma.deletionSwipe.deleteMany({
+      where: { libraryId: library.id, ratingKey: String(ratingKey) },
+    });
+    const shortlistCount = await prisma.deletionSwipe.count({
+      where: { libraryId: library.id, decision: "DELETE" },
+    });
+    res.json({ ok: true, shortlistCount });
+  } catch (error) {
+    console.error("Error undoing deletion decision:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Albums marked for deletion + per-status counts (review screen, resume, summary)
+app.get("/api/deletion-wizard/marked", async (req, res) => {
+  try {
+    const library = await resolveDeleterLibrary(req, res);
+    if (!library) return;
+
+    const [marked, judged] = await Promise.all([
+      prisma.deletionSwipe.findMany({
+        where: { libraryId: library.id, decision: "DELETE" },
+        orderBy: { updatedAt: "asc" },
+      }),
+      prisma.deletionSwipe.count({ where: { libraryId: library.id } }),
+    ]);
+
+    const counts = { pending: 0, deleted: 0, failed: 0 };
+    for (const row of marked) {
+      if (row.deleteStatus === "PENDING") counts.pending++;
+      else if (row.deleteStatus === "DELETED") counts.deleted++;
+      else if (row.deleteStatus === "FAILED") counts.failed++;
+    }
+    res.json({ marked, counts, judged });
+  } catch (error) {
+    console.error("Error fetching deletion list:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Execute the confirmed deletion (fire-and-forget; poll progress)
+app.post("/api/deletion-wizard/execute", async (req, res) => {
+  try {
+    if (deletionState.isDeleting) {
+      return res.status(409).json({ error: "A deletion is already in progress" });
+    }
+    const library = await resolveDeleterLibrary(req, res);
+    if (!library) return;
+
+    // FAILED rows are included so re-running retries them
+    const rows = await prisma.deletionSwipe.findMany({
+      where: {
+        libraryId: library.id,
+        decision: "DELETE",
+        deleteStatus: { in: ["PENDING", "FAILED"] },
+      },
+      orderBy: { updatedAt: "asc" },
+    });
+
+    deletionState = {
+      isDeleting: true,
+      current: 0,
+      total: rows.length,
+      deleted: 0,
+      failed: 0,
+      currentAlbum: null,
+      shouldStop: false,
+      error: null,
+      scanTriggered: false,
+      plexTrashEmptied: false,
+      results: [],
+      libraryId: library.id,
+    };
+
+    res.json({ started: true, total: rows.length });
+
+    runDeletion(deletionState, library, rows)
+      .catch(err => {
+        console.error("Deletion run failed:", err);
+        deletionState.error = err.message;
+      })
+      .finally(() => {
+        deletionState.isDeleting = false;
+        deletionState.currentAlbum = null;
+      });
+  } catch (error) {
+    console.error("Error starting deletion:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Deletion progress
+app.get("/api/deletion-wizard/execute/progress", (req, res) => {
+  res.json(deletionState);
+});
+
+// Cancel deletion (stops between albums)
+app.delete("/api/deletion-wizard/execute", (req, res) => {
+  if (deletionState.isDeleting) {
+    deletionState.shouldStop = true;
+    res.json({ ok: true, message: "Stopping after current album" });
+  } else {
+    res.json({ ok: true, message: "No deletion in progress" });
   }
 });
 

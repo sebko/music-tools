@@ -12,6 +12,8 @@ import SyncToFilesPage from "./pages/SyncToFilesPage";
 import SyncToFilesDetailPage from "./pages/SyncToFilesDetailPage";
 import SyncFailuresPage from "./pages/SyncFailuresPage";
 import FilesToPlexPage from "./pages/FilesToPlexPage";
+import FavouritesWizardPage from "./pages/FavouritesWizardPage";
+import AlbumDeleterPage from "./pages/AlbumDeleterPage";
 import SettingsPage from "./pages/SettingsPage";
 
 function App() {
@@ -33,6 +35,8 @@ function App() {
             <Route path="/sync-to-files/:id" element={<SyncToFilesDetailPage />} />
             <Route path="/sync-failures" element={<SyncFailuresPage />} />
             <Route path="/files-to-plex" element={<FilesToPlexPage />} />
+            <Route path="/favourites-wizard" element={<FavouritesWizardPage />} />
+            <Route path="/album-deleter" element={<AlbumDeleterPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </Layout>
