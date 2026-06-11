@@ -41,10 +41,13 @@ export async function activeLibraryMiddleware(req, res, next) {
     req.library = library;
     req.server = library?.server || null;
     req.activeLibraryId = library?.id || null;
-  } catch {
+  } catch (err) {
+    // A DB failure here is NOT "no library configured" — expose it so endpoints
+    // can report it instead of rendering fresh-install empty states.
     req.library = null;
     req.server = null;
     req.activeLibraryId = null;
+    req.libraryLoadError = err;
   }
   next();
 }

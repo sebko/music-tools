@@ -156,11 +156,43 @@ async function activeServer(req) {
   return getServerConnection(req.server);
 }
 
-// Health check endpoint
-app.get("/health", (req, res) => {
+// Reduce a Prisma/SQLite error blob to a short human-readable reason. The raw
+// messages are multi-line Rust-flavoured dumps (ConnectorError { ... }) that are
+// useless to show in the UI.
+function describeDatabaseError(err) {
+  const raw = err?.message || "";
+  const sqliteMessage = raw.match(/message: Some\("([^"]+)"\)/)?.[1] || null;
+
+  if (sqliteMessage === "database disk image is malformed") {
+    return "the database file became unreadable — this usually means the drive holding it was disconnected";
+  }
+  if (/unable to open/i.test(raw) || err?.code === "P1003" || err?.code === "P1000") {
+    return "the database file can't be opened — check the drive it lives on is mounted";
+  }
+  return (
+    sqliteMessage ||
+    raw.split("\n").map(line => line.trim()).filter(Boolean)[0] ||
+    "database unreachable"
+  );
+}
+
+// Health check endpoint. Also probes the database so the frontend can tell
+// "backend down" apart from "backend up but DB unreachable" (e.g. the external
+// drive holding the SQLite file was unplugged).
+app.get("/health", async (req, res) => {
+  let database = "ok";
+  let databaseError = null;
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+  } catch (err) {
+    database = "error";
+    databaseError = describeDatabaseError(err);
+  }
   res.json({
     status: "ok",
     message: "Music Tagger API is running",
+    database,
+    databaseError,
     timestamp: new Date().toISOString(),
   });
 });
@@ -1790,6 +1822,13 @@ app.get("/api/albums", async (req, res) => {
     const sort = req.query.sort || "createdAt";
     const sortDirection = req.query.sortDirection || "desc";
     const search = req.query.search;
+
+    // A DB failure resolving the library must not masquerade as a fresh install.
+    if (req.libraryLoadError) {
+      return res.status(500).json({
+        error: `Can't read the music database: ${describeDatabaseError(req.libraryLoadError)}. Once it's back, restart the backend.`,
+      });
+    }
 
     // No active library (fresh install / nothing selected): return an empty page
     // so the UI shows its empty state rather than erroring.

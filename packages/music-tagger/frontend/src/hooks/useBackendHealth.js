@@ -20,5 +20,7 @@ export function useBackendHealth() {
   });
   // Only treat as down once we've actually had a failed attempt (avoid a flash on first load).
   const isDown = query.isError && query.failureCount > 0;
-  return { isDown, ...query };
+  // Backend reachable but its database isn't (e.g. external drive unplugged).
+  const isDbDown = !isDown && query.data?.database === "error";
+  return { isDown, isDbDown, dbError: query.data?.databaseError || null, ...query };
 }

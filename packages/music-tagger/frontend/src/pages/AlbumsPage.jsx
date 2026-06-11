@@ -66,7 +66,12 @@ function AlbumsPage() {
   const syncCompleteness = qualityFilter === "incomplete" ? "incomplete" : "";
 
   const { activeLibrary } = useLibrary();
-  const { data: plexSettings } = usePlexSettings();
+  const {
+    data: plexSettings,
+    isError: isSettingsError,
+    error: settingsError,
+    refetch: refetchSettings,
+  } = usePlexSettings();
   const plexConnected = !!plexSettings?.configured;
 
   const { data, isLoading, isError, error, isPlaceholderData, refetch } = useAlbums(
@@ -303,8 +308,25 @@ function AlbumsPage() {
     } else {
       // Show different empty states based on match filter
       if (matchFilter === 'unmatched') {
-        // Connected with zero albums: prompt a scan, not "Connect Plex".
-        mainContent = plexConnected ? (
+        // A failed settings lookup is a server problem, not "Plex isn't connected" —
+        // don't funnel the user into the Connect Plex setup flow.
+        mainContent = isSettingsError ? (
+          <EmptyState
+            icon={<AlertTriangle className="w-16 h-16 text-red-500" />}
+            heading="Couldn't load library status"
+            description={
+              settingsError?.message ||
+              "Something went wrong talking to the server. Please try again."
+            }
+            action={
+              <Button onClick={() => refetchSettings()} variant="primary" size="lg">
+                <RefreshCw className="w-5 h-5" />
+                Retry
+              </Button>
+            }
+          />
+        ) : plexConnected ? (
+          // Connected with zero albums: prompt a scan, not "Connect Plex".
           <UnmatchedView
             onButtonClick={handleStartScan}
             isStarting={isStartingScan}
