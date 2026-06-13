@@ -16,6 +16,7 @@ export async function recordDecision(libraryId, album, decision) {
       ratingKey: album.ratingKey,
       title: album.title,
       artist: album.artist,
+      genre: album.genre,
       location: album.location,
       decision,
     }),

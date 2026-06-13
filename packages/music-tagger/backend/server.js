@@ -3319,7 +3319,7 @@ app.post("/api/deletion-wizard/decisions", async (req, res) => {
   try {
     const library = await resolveDeleterLibrary(req, res);
     if (!library) return;
-    const { ratingKey, decision, title, artist, location } = req.body || {};
+    const { ratingKey, decision, title, artist, genre, location } = req.body || {};
 
     if (!ratingKey || !["DELETE", "SKIP"].includes(decision)) {
       return res.status(400).json({ error: "ratingKey and a DELETE/SKIP decision are required" });
@@ -3332,6 +3332,7 @@ app.post("/api/deletion-wizard/decisions", async (req, res) => {
         ...pairKey,
         title: title || "",
         artist: artist || "",
+        genre: genre || null,
         location: location || null,
         decision,
         deleteStatus: decision === "DELETE" ? "PENDING" : null,
@@ -3339,6 +3340,7 @@ app.post("/api/deletion-wizard/decisions", async (req, res) => {
       update: {
         title: title || "",
         artist: artist || "",
+        genre: genre || null,
         location: location || null,
         decision,
         deleteStatus: decision === "DELETE" ? "PENDING" : null,

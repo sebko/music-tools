@@ -128,6 +128,7 @@ model DeletionSwipe {
   ratingKey    String         @map("rating_key")
   title        String
   artist       String
+  genre        String? // comma-separated Plex genres, captured at swipe time
   location     String? // album directory path on disk (from Plex)
   decision     DeleteDecision
   deleteStatus DeleteStatus?  @map("delete_status") // PENDING for DELETE, null for SKIP

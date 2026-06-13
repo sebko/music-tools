@@ -1,4 +1,4 @@
-import { Button, CardGrid, MediaCard, EmptyState } from "@dj-tools/my-component-library";
+import { Button, CardGrid, MediaCard, EmptyState, TagPill } from "@dj-tools/my-component-library";
 import { Trash2, ArrowLeft, X, CheckCircle } from "lucide-react";
 import { useDeletionMarked, useUnmarkDeletion, useClearDecisions } from "../../hooks/useDeletionWizard";
 
@@ -6,7 +6,7 @@ import { useDeletionMarked, useUnmarkDeletion, useClearDecisions } from "../../h
 // user must explicitly confirm before anything is touched on disk. Each card can
 // be unmarked individually (the album re-enters the swipe feed); "Clear all
 // marks" sits apart from the destructive CTA so neither is clicked by accident.
-function DeleteReviewStep({ libraryId, onConfirm, onBack, onBackToSetup }) {
+function DeleteReviewStep({ libraryId, onConfirm, onBackToSetup }) {
   const { data, isLoading } = useDeletionMarked(libraryId);
   const unmark = useUnmarkDeletion(libraryId);
   const clearAll = useClearDecisions(libraryId);
@@ -40,8 +40,8 @@ function DeleteReviewStep({ libraryId, onConfirm, onBack, onBackToSetup }) {
           </p>
         </div>
         {toDelete.length > 0 && (
-          <Button onClick={onBack} variant="secondary" size="sm">
-            <ArrowLeft className="w-4 h-4" /> Keep swiping
+          <Button onClick={onBackToSetup} variant="secondary" size="sm">
+            <ArrowLeft className="w-4 h-4" /> Back
           </Button>
         )}
       </div>
@@ -80,6 +80,17 @@ function DeleteReviewStep({ libraryId, onConfirm, onBack, onBackToSetup }) {
                 </div>
               }
             >
+              {row.genre && (
+                <div className="flex flex-wrap gap-1">
+                  {row.genre
+                    .split(",")
+                    .map((g) => g.trim())
+                    .filter(Boolean)
+                    .map((g) => (
+                      <TagPill key={g} label={g} />
+                    ))}
+                </div>
+              )}
               {row.deleteStatus === "FAILED" && row.deleteError && (
                 <p className="text-xs text-red-600 dark:text-red-400 truncate" title={row.deleteError}>
                   Previous attempt failed
