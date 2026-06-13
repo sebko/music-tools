@@ -32,6 +32,13 @@ export async function fetchMarked(libraryId) {
   return apiJson(`/deletion-wizard/marked?${new URLSearchParams({ libraryId })}`);
 }
 
+// scope: 'marked' unmarks pending/failed DELETE rows; 'all' forgets every judgment
+export async function clearDecisions(libraryId, scope = 'marked') {
+  return apiJson(`/deletion-wizard/decisions/all?${new URLSearchParams({ libraryId, scope })}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function startDeletion(libraryId) {
   return apiJson('/deletion-wizard/execute', {
     method: 'POST',

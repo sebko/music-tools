@@ -17,6 +17,9 @@ export function useBackendHealth() {
     retry: false,
     staleTime: 0,
     gcTime: 0,
+    // This query IS the error reporter (drives the banner) — never throw it
+    // to the app error boundary.
+    throwOnError: false,
   });
   // Only treat as down once we've actually had a failed attempt (avoid a flash on first load).
   const isDown = query.isError && query.failureCount > 0;

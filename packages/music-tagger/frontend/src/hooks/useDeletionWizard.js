@@ -6,6 +6,7 @@ import {
   recordDecision,
   undoDecision,
   fetchMarked,
+  clearDecisions,
   startDeletion,
   getDeletionProgress,
   cancelDeletion,
@@ -29,6 +30,32 @@ export function useDeletionMarked(libraryId, { enabled = true } = {}) {
     queryKey: ['deletion-marked', libraryId],
     queryFn: () => fetchMarked(libraryId),
     enabled: enabled && !!libraryId,
+  });
+}
+
+/** Unmark a single album from the review grid (it re-enters the swipe feed). */
+export function useUnmarkDeletion(libraryId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (ratingKey) => undoDecision(libraryId, ratingKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deletion-marked', libraryId] });
+      queryClient.invalidateQueries({ queryKey: ['deletion-candidates', libraryId] });
+    },
+    onError: (error) => console.error('Failed to unmark album:', error),
+  });
+}
+
+/** Bulk-clear decisions: scope 'marked' (unmark all) or 'all' (forget judgments). */
+export function useClearDecisions(libraryId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (scope) => clearDecisions(libraryId, scope),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deletion-marked', libraryId] });
+      queryClient.invalidateQueries({ queryKey: ['deletion-candidates', libraryId] });
+    },
+    onError: (error) => console.error('Failed to clear decisions:', error),
   });
 }
 

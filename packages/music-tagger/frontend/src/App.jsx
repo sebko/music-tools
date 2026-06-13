@@ -3,6 +3,7 @@ import { ThemeProvider } from "@dj-tools/my-component-library";
 import { useHueRotation } from "./hooks/useHueRotation";
 import { LibraryProvider } from "./contexts/LibraryContext.jsx";
 import Layout from "./components/Layout";
+import AppErrorBoundary from "./components/AppErrorBoundary";
 import AlbumsPage from "./pages/AlbumsPage";
 import AlbumDetailPage from "./pages/AlbumDetailPage";
 import AlbumMetadataSearchPage from "./pages/AlbumMetadataSearchPage";
@@ -25,6 +26,7 @@ function App() {
       <Router>
         <LibraryProvider>
         <Layout>
+          <AppErrorBoundary>
           <Routes>
             <Route path="/" element={<AlbumsPage />} />
             <Route path="/albums/:id" element={<AlbumDetailPage />} />
@@ -39,6 +41,7 @@ function App() {
             <Route path="/album-deleter" element={<AlbumDeleterPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
+          </AppErrorBoundary>
         </Layout>
         </LibraryProvider>
       </Router>

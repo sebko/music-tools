@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "@dj-tools/my-component-library";
-import { useLibrary } from "../hooks/useLibrary";
 import { useFavouritesCopy, useFavouritesGame } from "../hooks/useFavouritesWizard";
 import SetupStep from "../components/favourites/SetupStep";
 import GameStep from "../components/favourites/GameStep";
@@ -10,7 +9,6 @@ import SummaryStep from "../components/favourites/SummaryStep";
 // Wizard flow: setup (pick source/destination) -> game (swipe) -> copying -> summary.
 // Source/destination are local to the wizard; the global active library is untouched.
 function FavouritesWizardPage() {
-  const { servers } = useLibrary();
   const [step, setStep] = useState("setup");
   const [sourceId, setSourceId] = useState("");
   const [destId, setDestId] = useState("");
@@ -43,7 +41,6 @@ function FavouritesWizardPage() {
 
       {step === "setup" && (
         <SetupStep
-          servers={servers}
           sourceId={sourceId}
           destId={destId}
           onSourceChange={setSourceId}

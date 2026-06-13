@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "@dj-tools/my-component-library";
 import { Trash2 } from "lucide-react";
-import { useLibrary } from "../hooks/useLibrary";
 import { useDeletionGame, useDeletionRun } from "../hooks/useDeletionWizard";
 import DeleterSetupStep from "../components/deleter/DeleterSetupStep";
 import GameStep from "../components/favourites/GameStep";
@@ -13,7 +12,6 @@ import DeleteSummaryStep from "../components/deleter/DeleteSummaryStep";
 // (explicit confirm) -> deleting -> summary. Nothing touches disk before the
 // review step is confirmed; folders go to the volume Trash, not rm -rf.
 function AlbumDeleterPage() {
-  const { servers } = useLibrary();
   const [step, setStep] = useState("setup");
   const [libraryId, setLibraryId] = useState("");
 
@@ -44,10 +42,10 @@ function AlbumDeleterPage() {
 
       {step === "setup" && (
         <DeleterSetupStep
-          servers={servers}
           libraryId={libraryId}
           onLibraryChange={setLibraryId}
           onNext={() => setStep("game")}
+          onReviewMarked={() => setStep("review")}
         />
       )}
 
@@ -67,6 +65,7 @@ function AlbumDeleterPage() {
           libraryId={libraryId}
           onConfirm={confirmDeletion}
           onBack={() => setStep("game")}
+          onBackToSetup={() => setStep("setup")}
         />
       )}
 

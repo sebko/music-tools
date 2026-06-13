@@ -178,15 +178,19 @@ function describeDatabaseError(err) {
 
 // Health check endpoint. Also probes the database so the frontend can tell
 // "backend down" apart from "backend up but DB unreachable" (e.g. the external
-// drive holding the SQLite file was unplugged).
+// drive holding the SQLite file was unplugged). The probe reads a real table:
+// after a drive remount the stale file handle still answers `SELECT 1` but
+// fails on actual pages. On failure the Prisma connection is reset so the next
+// query reopens the file — the app self-heals once the drive is back.
 app.get("/health", async (req, res) => {
   let database = "ok";
   let databaseError = null;
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    await prisma.plexLibrary.count();
   } catch (err) {
     database = "error";
     databaseError = describeDatabaseError(err);
+    prisma.$disconnect().catch(() => {});
   }
   res.json({
     status: "ok",
@@ -3025,6 +3029,7 @@ app.get("/api/favourites-wizard/candidates", async (req, res) => {
         title: a.title,
         artist: a.artist,
         year: a.year,
+        genre: a.genre,
         artworkUrl: a.artworkUrl,
         location: a.location,
       })),
@@ -3291,6 +3296,7 @@ app.get("/api/deletion-wizard/candidates", async (req, res) => {
         title: a.title,
         artist: a.artist,
         year: a.year,
+        genre: a.genre,
         artworkUrl: a.artworkUrl,
         location: a.location,
       })),
@@ -3385,15 +3391,57 @@ app.get("/api/deletion-wizard/marked", async (req, res) => {
       prisma.deletionSwipe.count({ where: { libraryId: library.id } }),
     ]);
 
+    // Artwork for the review grid. Built from the ratingKey (Plex serves the
+    // current thumb without a timestamp); best-effort if the server is offline.
+    let artworkFor = () => null;
+    try {
+      const server = await getServerConnection(library.server);
+      artworkFor = ratingKey =>
+        server.url(`/library/metadata/${ratingKey}/thumb`, true).toString();
+    } catch {
+      // Server unreachable: cards fall back to their placeholder icon.
+    }
+
     const counts = { pending: 0, deleted: 0, failed: 0 };
     for (const row of marked) {
       if (row.deleteStatus === "PENDING") counts.pending++;
       else if (row.deleteStatus === "DELETED") counts.deleted++;
       else if (row.deleteStatus === "FAILED") counts.failed++;
     }
-    res.json({ marked, counts, judged });
+    res.json({
+      marked: marked.map(row => ({ ...row, artworkUrl: artworkFor(row.ratingKey) })),
+      counts,
+      judged,
+    });
   } catch (error) {
     console.error("Error fetching deletion list:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk-clear swipe decisions. scope=marked unmarks not-yet-deleted DELETE rows
+// (albums re-enter the feed); scope=all forgets every judgment for the library.
+app.delete("/api/deletion-wizard/decisions/all", async (req, res) => {
+  try {
+    const library = await resolveDeleterLibrary(req, res);
+    if (!library) return;
+    const scope = req.query.scope || "marked";
+    if (!["marked", "all"].includes(scope)) {
+      return res.status(400).json({ error: "scope must be 'marked' or 'all'" });
+    }
+
+    const where =
+      scope === "all"
+        ? { libraryId: library.id }
+        : {
+            libraryId: library.id,
+            decision: "DELETE",
+            deleteStatus: { in: ["PENDING", "FAILED"] },
+          };
+    const { count } = await prisma.deletionSwipe.deleteMany({ where });
+    res.json({ ok: true, cleared: count });
+  } catch (error) {
+    console.error("Error clearing deletion decisions:", error);
     res.status(500).json({ error: error.message });
   }
 });

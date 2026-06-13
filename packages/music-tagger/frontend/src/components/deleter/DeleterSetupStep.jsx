@@ -1,14 +1,25 @@
 import { Button } from "@dj-tools/my-component-library";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, LayoutGrid, RotateCcw } from "lucide-react";
 import GroupedLibrarySelect from "../favourites/GroupedLibrarySelect";
-import { useDeletionMarked } from "../../hooks/useDeletionWizard";
+import { useDeletionMarked, useClearDecisions } from "../../hooks/useDeletionWizard";
 
-function DeleterSetupStep({ servers, libraryId, onLibraryChange, onNext }) {
+function DeleterSetupStep({ libraryId, onLibraryChange, onNext, onReviewMarked }) {
   const ready = !!libraryId;
   const { data: markedData } = useDeletionMarked(libraryId, { enabled: ready });
+  const clearAll = useClearDecisions(libraryId);
 
   const judged = markedData?.judged ?? 0;
-  const pending = markedData?.counts?.pending ?? 0;
+  const pending = (markedData?.counts?.pending ?? 0) + (markedData?.counts?.failed ?? 0);
+
+  const handleStartOver = () => {
+    if (
+      window.confirm(
+        `Forget all ${judged} judgments for this library? Every album reappears in the swipe feed. Nothing is deleted.`
+      )
+    ) {
+      clearAll.mutate("all");
+    }
+  };
 
   return (
     <div className="max-w-xl mx-auto space-y-6">
@@ -18,24 +29,34 @@ function DeleterSetupStep({ servers, libraryId, onLibraryChange, onNext }) {
           The library you'll swipe through. Albums you swipe right get marked for
           deletion — nothing is deleted until you review and confirm.
         </p>
-        <GroupedLibrarySelect
-          servers={servers}
-          value={libraryId}
-          onChange={onLibraryChange}
-          label="Library"
-        />
+        <GroupedLibrarySelect value={libraryId} onChange={onLibraryChange} label="Library" />
       </div>
 
       {ready && judged > 0 && (
-        <p className="text-sm text-muted-foreground text-center">
-          Resuming: {judged} album{judged === 1 ? "" : "s"} already judged
-          {pending > 0 && <> · {pending} marked for deletion</>}
-        </p>
+        <div className="flex items-center justify-center gap-3 flex-wrap text-sm text-muted-foreground">
+          <span>
+            Resuming: {judged} album{judged === 1 ? "" : "s"} already judged
+            {pending > 0 && <> · {pending} marked for deletion</>}
+          </span>
+          {pending > 0 && (
+            <Button onClick={onReviewMarked} variant="secondary" size="xs">
+              <LayoutGrid className="w-3.5 h-3.5" /> Review marked
+            </Button>
+          )}
+          <Button
+            onClick={handleStartOver}
+            variant="secondary"
+            size="xs"
+            disabled={clearAll.isPending}
+          >
+            <RotateCcw className="w-3.5 h-3.5" /> Start over
+          </Button>
+        </div>
       )}
 
       <div className="flex justify-center">
         <Button onClick={onNext} disabled={!ready} variant="primary" size="lg">
-          Next <ArrowRight className="w-4 h-4" />
+          Start swiping <ArrowRight className="w-4 h-4" />
         </Button>
       </div>
     </div>

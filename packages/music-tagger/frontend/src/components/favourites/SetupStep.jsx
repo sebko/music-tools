@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 import GroupedLibrarySelect from "./GroupedLibrarySelect";
 import { useFavouritesShortlist } from "../../hooks/useFavouritesWizard";
 
-function SetupStep({ servers, sourceId, destId, onSourceChange, onDestChange, onNext }) {
+function SetupStep({ sourceId, destId, onSourceChange, onDestChange, onNext }) {
   const ready = !!sourceId && !!destId && sourceId !== destId;
   const { data: shortlistData } = useFavouritesShortlist(sourceId, destId, { enabled: ready });
 
@@ -19,7 +19,6 @@ function SetupStep({ servers, sourceId, destId, onSourceChange, onDestChange, on
             The library you'll swipe through.
           </p>
           <GroupedLibrarySelect
-            servers={servers}
             value={sourceId}
             onChange={onSourceChange}
             label="Source library"
@@ -33,7 +32,6 @@ function SetupStep({ servers, sourceId, destId, onSourceChange, onDestChange, on
             Where shortlisted albums get copied.
           </p>
           <GroupedLibrarySelect
-            servers={servers}
             value={destId}
             onChange={onDestChange}
             label="Destination library"
@@ -51,7 +49,7 @@ function SetupStep({ servers, sourceId, destId, onSourceChange, onDestChange, on
 
       <div className="flex justify-center">
         <Button onClick={onNext} disabled={!ready} variant="primary" size="lg">
-          Next <ArrowRight className="w-4 h-4" />
+          Start swiping <ArrowRight className="w-4 h-4" />
         </Button>
       </div>
     </div>

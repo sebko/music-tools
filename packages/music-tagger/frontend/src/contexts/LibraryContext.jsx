@@ -11,10 +11,17 @@ export function LibraryProvider({ children }) {
   const navigate = useNavigate();
 
   // Enabled servers -> libraries (+ counts) and the persisted active library id.
-  const { data } = useQuery({
+  // This query is foundational (every library selector feeds off it), so when it
+  // errors (e.g. the page loaded while the backend was restarting) keep retrying
+  // instead of sitting on an empty server list forever.
+  const { data, isLoading: serversLoading, isError: serversError, error: serversErrorDetail, refetch: refetchServers } = useQuery({
     queryKey: ["servers"],
     queryFn: fetchServers,
     staleTime: 5 * 60 * 1000,
+    refetchInterval: (query) => (query.state.status === "error" ? 5000 : false),
+    // Renders above the app error boundary and has its own error handling
+    // (GroupedLibrarySelect / header switcher) — never throw.
+    throwOnError: false,
   });
 
   const servers = useMemo(() => data?.servers || [], [data]);
@@ -80,7 +87,17 @@ export function LibraryProvider({ children }) {
 
   return (
     <LibraryContext.Provider
-      value={{ activeLibrary, activeLibraryName, switchLibrary, servers, libraries }}
+      value={{
+        activeLibrary,
+        activeLibraryName,
+        switchLibrary,
+        servers,
+        libraries,
+        serversLoading,
+        serversError,
+        serversErrorDetail,
+        refetchServers,
+      }}
     >
       {children}
     </LibraryContext.Provider>

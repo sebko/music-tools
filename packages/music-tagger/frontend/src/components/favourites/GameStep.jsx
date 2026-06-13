@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "@dj-tools/my-component-library";
+import { Button, TagPill } from "@dj-tools/my-component-library";
 import { Heart, X, Undo2, Check, Music } from "lucide-react";
 
 const SWIPE_ANIMATION_MS = 220;
@@ -146,6 +146,17 @@ function GameStep({
                 {currentAlbum.artist}
                 {currentAlbum.year ? ` · ${currentAlbum.year}` : ""}
               </p>
+              {currentAlbum.genre && (
+                <div className="flex flex-wrap justify-center gap-1.5 mt-2 max-w-[85vw]">
+                  {currentAlbum.genre
+                    .split(",")
+                    .map((g) => g.trim())
+                    .filter(Boolean)
+                    .map((g) => (
+                      <TagPill key={g} label={g} />
+                    ))}
+                </div>
+              )}
             </div>
           </div>
         ) : null}
