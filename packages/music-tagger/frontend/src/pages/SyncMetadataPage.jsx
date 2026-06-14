@@ -133,9 +133,11 @@ function SyncMetadataPage() {
     }));
   };
 
-  // Handle artwork selection from modal
+  // Handle artwork selection from modal. Picking custom artwork (URL or upload)
+  // implies the user wants to sync it, so auto-tick the artwork field.
   const handleArtworkSelect = (artworkData) => {
     setSelectedArtwork(artworkData);
+    setSelectedFields(prev => ({ ...prev, coverUrl: true }));
     console.log('Artwork selected:', artworkData);
   };
 
@@ -224,6 +226,18 @@ function SyncMetadataPage() {
       />
     );
   }
+
+  // A field counts toward syncing only if it's selected AND actually has data to
+  // apply. Mirrors the diff built in the Sync button's onClick so we never enable
+  // the button for an empty sync.
+  const hasArtworkToSync =
+    selectedFields.coverUrl && (!!selectedArtwork || !!redactedData.coverUrl);
+  const hasFieldToSync = ['title', 'year', 'tags', 'label'].some((field) => {
+    if (!selectedFields[field]) return false;
+    const value = redactedData[field];
+    return Array.isArray(value) ? value.length > 0 : !!value;
+  });
+  const canSync = hasArtworkToSync || hasFieldToSync;
 
   return (
     <div>
@@ -540,6 +554,10 @@ function SyncMetadataPage() {
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedArtwork(null);
+                      // Untick artwork unless Redacted still offers a cover to sync.
+                      if (!redactedData.coverUrl) {
+                        setSelectedFields(prev => ({ ...prev, coverUrl: false }));
+                      }
                     }}
                   >
                     <span className="text-xs">✕</span>
@@ -662,6 +680,8 @@ function SyncMetadataPage() {
           variant="primary"
           size="md"
           isLoading={isApplying}
+          isDisabled={!canSync}
+          title={!canSync ? "Select at least one field to sync" : undefined}
           onClick={async () => {
             setIsApplying(true);
             setApplyMessage(null);
