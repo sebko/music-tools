@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "@dj-tools/my-component-library";
 import { Trash2 } from "lucide-react";
+import { useLibrary } from "../hooks/useLibrary";
 import { useDeletionGame, useDeletionRun } from "../hooks/useDeletionWizard";
 import DeleterSetupStep from "../components/deleter/DeleterSetupStep";
 import GameStep from "../components/favourites/GameStep";
@@ -8,12 +9,13 @@ import DeleteReviewStep from "../components/deleter/DeleteReviewStep";
 import DeleteProgressStep from "../components/deleter/DeleteProgressStep";
 import DeleteSummaryStep from "../components/deleter/DeleteSummaryStep";
 
-// Deleter flow: setup (pick library) -> game (swipe right to mark) -> review
-// (explicit confirm) -> deleting -> summary. Nothing touches disk before the
-// review step is confirmed; folders go to the volume Trash, not rm -rf.
+// Deleter flow: setup (intro) -> game (swipe right to mark) -> review
+// (explicit confirm) -> deleting -> summary. The library is whatever's selected
+// in the top menu. Nothing touches disk before the review step is confirmed;
+// folders go to the volume Trash, not rm -rf.
 function AlbumDeleterPage() {
   const [step, setStep] = useState("setup");
-  const [libraryId, setLibraryId] = useState("");
+  const { activeLibrary: libraryId } = useLibrary();
 
   const run = useDeletionRun(libraryId);
   const game = useDeletionGame(libraryId, { enabled: step === "game" });
@@ -21,10 +23,9 @@ function AlbumDeleterPage() {
   // If a deletion is already running (e.g. page reload mid-run), jump to progress
   useEffect(() => {
     if (run.isDeleting && step !== "deleting") {
-      if (!libraryId && run.progress.libraryId) setLibraryId(run.progress.libraryId);
       setStep("deleting");
     }
-  }, [run.isDeleting, run.progress, step, libraryId]);
+  }, [run.isDeleting, step]);
 
   const confirmDeletion = () => {
     setStep("deleting");
@@ -43,7 +44,6 @@ function AlbumDeleterPage() {
       {step === "setup" && (
         <DeleterSetupStep
           libraryId={libraryId}
-          onLibraryChange={setLibraryId}
           onNext={() => setStep("game")}
           onReviewMarked={() => setStep("review")}
         />
