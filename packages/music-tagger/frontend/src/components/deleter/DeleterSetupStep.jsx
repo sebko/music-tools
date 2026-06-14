@@ -1,9 +1,10 @@
 import { Button } from "@dj-tools/my-component-library";
 import { ArrowRight, LayoutGrid, RotateCcw } from "lucide-react";
-import GroupedLibrarySelect from "../favourites/GroupedLibrarySelect";
+import { useLibrary } from "../../hooks/useLibrary";
 import { useDeletionMarked, useClearDecisions } from "../../hooks/useDeletionWizard";
 
-function DeleterSetupStep({ libraryId, onLibraryChange, onNext, onReviewMarked }) {
+function DeleterSetupStep({ libraryId, onNext, onReviewMarked }) {
+  const { activeLibraryName } = useLibrary();
   const ready = !!libraryId;
   const { data: markedData } = useDeletionMarked(libraryId, { enabled: ready });
   const clearAll = useClearDecisions(libraryId);
@@ -24,12 +25,14 @@ function DeleterSetupStep({ libraryId, onLibraryChange, onNext, onReviewMarked }
   return (
     <div className="max-w-xl mx-auto space-y-6">
       <div className="p-5 rounded-base border-2 border-border bg-background space-y-3">
-        <h2 className="font-heading text-foreground">Library</h2>
+        <h2 className="font-heading text-foreground">
+          Library{activeLibraryName ? `: ${activeLibraryName}` : ""}
+        </h2>
         <p className="text-sm text-muted-foreground">
-          The library you'll swipe through. Albums you swipe right get marked for
-          deletion — nothing is deleted until you review and confirm.
+          You'll swipe through the library selected in the top menu. Albums you
+          swipe right get marked for deletion — nothing is deleted until you
+          review and confirm.
         </p>
-        <GroupedLibrarySelect value={libraryId} onChange={onLibraryChange} label="Library" />
       </div>
 
       {ready && judged > 0 && (
