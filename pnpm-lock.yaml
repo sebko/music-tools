@@ -191,6 +191,9 @@ importers:
       node-id3:
         specifier: ^0.2.9
         version: 0.2.9
+      node-id3tag:
+        specifier: ^0.9.8
+        version: 0.9.8
       prisma:
         specifier: ^6.17.1
         version: 6.19.2(magicast@0.3.5)(typescript@5.9.2)
@@ -363,8 +366,6 @@ importers:
       typescript:
         specifier: ^5.3.0
         version: 5.9.2
-
-  packages/singles-metadata-manager: {}
 
   packages/youtube-setlist-recogniser:
     dependencies:
