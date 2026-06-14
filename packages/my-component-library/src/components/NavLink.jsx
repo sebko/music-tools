@@ -12,13 +12,12 @@ import { cn } from "../lib/utils";
  */
 function NavLink({ isActive = false, asChild = false, className, children, ...props }) {
   const navClasses = cn(
-    "px-4 py-2 rounded-base font-heading",
-    "border-2 border-border shadow-light",
-    "hover:shadow-base hover:-translate-x-0.5 hover:-translate-y-0.5",
-    "active:shadow-none active:translate-x-0 active:translate-y-0",
-    "transition-all duration-200 bg-background",
-    "inline-flex items-center gap-2",
-    isActive ? "text-main" : "text-foreground",
+    "px-3 py-2 rounded-base font-heading bg-transparent",
+    "inline-flex items-center gap-2 cursor-pointer",
+    "transition-colors duration-200 hover:text-main",
+    isActive
+      ? "text-main underline underline-offset-4 decoration-2"
+      : "text-foreground",
     className
   );
 
