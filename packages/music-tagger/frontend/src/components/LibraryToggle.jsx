@@ -13,7 +13,7 @@ function LibraryToggle() {
       value={activeLibrary || ""}
       onChange={(e) => switchLibrary(e.target.value)}
       aria-label="Active library"
-      className="px-3 py-1.5 rounded-base border-2 border-border bg-background text-foreground text-sm font-heading focus:outline-none focus:border-main"
+      className="h-11 px-3 rounded-base border-2 border-border bg-background text-foreground text-sm font-heading focus:outline-none focus:border-main"
     >
       {servers.map((server) => (
         <optgroup key={server.id} label={server.name}>

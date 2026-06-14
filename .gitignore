@@ -115,3 +115,5 @@ packages/metadata-manager/backend/data/
 .Trashes
 ehthumbs.db
 Thumbs.db
+# Claude Code worktrees live inside the repo; never track them
+.claude/worktrees/
