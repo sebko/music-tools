@@ -4,6 +4,7 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
+    "postinstall": "prisma generate",
     "dev": "nodemon server.js",
     "dev:test": "NODE_ENV=test nodemon server.js",
     "start": "node server.js",

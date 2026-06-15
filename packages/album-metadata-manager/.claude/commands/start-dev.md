@@ -33,18 +33,43 @@ whichever checkout you last started.
    ```
 
 2. Preflight the target checkout — a fresh worktree starts with no
-   `node_modules` and no built component-library `dist` (the frontend imports
-   the built `dist`, not the library source), so ensure both exist before
-   launching. Always rebuild the library so a just-edited component is picked up:
+   `node_modules`, no generated Prisma client, no `.env` files, and no built
+   component-library `dist` (the frontend imports the built `dist`, not the
+   library source). This step makes a cold worktree fully runnable: install all
+   workspace deps, generate the Prisma client, bootstrap the gitignored env
+   files from the main checkout, and rebuild the library:
    ```bash
    ROOT=$(git rev-parse --show-toplevel)
    echo "Serving album-metadata-manager from: $ROOT"
-   [ -d "$ROOT/node_modules" ] || pnpm install --dir "$ROOT"
+
+   # (a) Always install — idempotent and fast when warm. No `[ -d node_modules ]`
+   #     guard, so partial-install states get repaired and ALL workspace packages
+   #     (incl. backend nodemon) are present. Also triggers the backend
+   #     `postinstall: prisma generate`.
+   pnpm install --dir "$ROOT"
+
+   # (b) Belt-and-suspenders: ensure the Prisma client exists even if a workspace
+   #     postinstall was skipped. Idempotent and fast.
+   npm --prefix "$ROOT/packages/album-metadata-manager/backend" exec prisma generate
+
+   # (c) Bootstrap gitignored env files into a worktree by copying from the main
+   #     checkout (DATABASE_URL is an absolute path, safe on this one machine).
+   #     Only copies when missing; no-op when run from the main checkout itself.
+   MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+   if [ "$MAIN" != "$ROOT" ]; then
+     for f in .env .env.test; do
+       SRC="$MAIN/packages/album-metadata-manager/backend/$f"
+       DST="$ROOT/packages/album-metadata-manager/backend/$f"
+       [ -f "$SRC" ] && [ ! -f "$DST" ] && cp "$SRC" "$DST" && echo "bootstrapped backend $f"
+     done
+   fi
+
+   # (d) Always rebuild the library so a just-edited component is picked up.
    npm --prefix "$ROOT/packages/my-component-library" run build
    ```
-   On the main checkout this is near-instant (deps already present, ~1.5s
-   library build). On a cold worktree the first run also pays a one-time
-   `pnpm install`.
+   On the main checkout this is near-instant (deps already present, env files in
+   place, ~1.5s library build). On a cold worktree the first run also pays a
+   one-time `pnpm install` + `prisma generate` and copies the env files across.
 
 3. Start the detached session with the backend window. `tee` keeps the live
    output visible if the user runs `tmux attach -t mt-dev`, while also capturing
