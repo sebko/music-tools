@@ -1,5 +1,5 @@
 const { MusicRecogniser } = require('../../music-recogniser/src');
-const { YouTubeTracklistExtractor } = require('@dj-tools/youtube-tracklist');
+const { YouTubeTracklistExtractor } = require('@music-tools/youtube-tracklist');
 const YouTubeService = require('./YouTubeService');
 
 /**

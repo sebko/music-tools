@@ -13,12 +13,12 @@ Recognize and extract tracklists from YouTube DJ sets, mixes, and long-form musi
 ## Installation
 
 ```bash
-npm install @dj-tools/youtube-setlist-recogniser
+npm install @music-tools/youtube-setlist-recogniser
 ```
 
 Or use directly with npx:
 ```bash
-npx @dj-tools/youtube-setlist-recogniser <youtube-url>
+npx @music-tools/youtube-setlist-recogniser <youtube-url>
 ```
 
 ## Usage
@@ -44,7 +44,7 @@ ysr "VIDEO_URL" --max-comments 2000 # Analyze more comments
 ### Programmatic Usage
 
 ```javascript
-const { YouTubeSetlistRecogniser } = require('@dj-tools/youtube-setlist-recogniser');
+const { YouTubeSetlistRecogniser } = require('@music-tools/youtube-setlist-recogniser');
 
 // Create recogniser instance
 const recogniser = new YouTubeSetlistRecogniser({

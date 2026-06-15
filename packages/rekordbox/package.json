@@ -1,5 +1,5 @@
 {
-  "name": "@dj-tools/rekordbox",
+  "name": "@music-tools/rekordbox",
   "version": "1.0.0",
   "type": "module",
   "description": "Low-level Rekordbox XML library for querying tracks, playlists, and collection data",

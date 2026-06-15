@@ -37,7 +37,7 @@
     "example:intensity": "node examples/intensity-modes.js"
   },
   "dependencies": {
-    "@dj-tools/youtube-tracklist": "workspace:*",
+    "@music-tools/youtube-tracklist": "workspace:*",
     "@trackid/music-recogniser": "workspace:*",
     "commander": "^11.1.0",
     "dotenv": "^16.6.1",

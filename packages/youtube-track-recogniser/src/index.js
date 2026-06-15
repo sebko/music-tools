@@ -3,7 +3,7 @@
  * YouTube single track recognition using audio fingerprinting and comment analysis
  * 
  * NOTE: This package is designed for SINGLE TRACK recognition only.
- * For DJ mixes, live sets, or multi-track content, use @dj-tools/youtube-tracklist instead.
+ * For DJ mixes, live sets, or multi-track content, use @music-tools/youtube-tracklist instead.
  */
 
 // Load environment variables from root (shared) and music-recogniser package

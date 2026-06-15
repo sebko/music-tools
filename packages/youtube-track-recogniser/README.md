@@ -123,4 +123,4 @@ if (result) {
 
 ## Single Track Only
 
-This tool is designed for individual songs. For DJ mixes or multi-track content, use `@dj-tools/youtube-tracklist` instead.
+This tool is designed for individual songs. For DJ mixes or multi-track content, use `@music-tools/youtube-tracklist` instead.

@@ -10,7 +10,7 @@ This is a pnpm monorepo for DJ tools and music management utilities. The codebas
 - **Root**: Contains workspace configuration and shared TypeScript setup
 - **packages/youtube-tracklist**: Main package that extracts tracklists from YouTube video comments using Claude AI
 - **packages/youtube-track-recogniser**: Identifies individual tracks from YouTube videos using audio fingerprinting (Shazam, AudD, ACRCloud)
-- **packages/metadata-manager**: Local music file metadata manager — frontend + backend for viewing/organising ID3/Vorbis tags and driving the beets singles library (genre tagging, inbox import pipeline)
+- **packages/singles-metadata-manager**: Local music file metadata manager — frontend + backend for viewing/organising ID3/Vorbis tags and driving the beets singles library (genre tagging, inbox import pipeline)
 
 ### Package Architecture (youtube-tracklist)
 The youtube-tracklist package follows a modular architecture:
@@ -67,7 +67,7 @@ cd packages/youtube-track-recogniser && node src/cli.js "https://youtube.com/wat
 cd packages/youtube-track-recogniser && ytr "VIDEO_ID"
 ```
 
-#### beets (Music library management, driven by metadata-manager)
+#### beets (Music library management, driven by singles-metadata-manager)
 ```bash
 # Run beets commands directly (installed via pipx)
 beet ls                    # List library items
@@ -77,7 +77,7 @@ beet stats                 # Library statistics
 
 Beets is installed via pipx. Install plugins with `pipx inject beets <package>`.
 Use `/beets-status` slash command to check beets health.
-The metadata-manager backend drives the full inbox import pipeline (see `packages/metadata-manager/CLAUDE.md`).
+The singles-metadata-manager backend drives the full inbox import pipeline (see `packages/singles-metadata-manager/CLAUDE.md`).
 
 ### IMPORTANT: Track Identification Instructions
 When a user asks "what song is this?", "find me this track", "identify this song", or provides a YouTube URL asking for track identification:

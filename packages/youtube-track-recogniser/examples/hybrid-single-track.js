@@ -126,7 +126,7 @@ async function hybridExample() {
   console.log('• Set preferAudioResult: true for most reliable primary result');
   console.log('• Adjust commentOptions.minConfidence based on your needs');
   console.log('\n🚫 Remember: This package is for SINGLE TRACKS only!');
-  console.log('   For DJ mixes or multi-track content, use @dj-tools/youtube-tracklist');
+  console.log('   For DJ mixes or multi-track content, use @music-tools/youtube-tracklist');
 }
 
 // Configuration examples
