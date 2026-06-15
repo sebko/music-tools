@@ -1,5 +1,5 @@
 const { MusicRecogniser } = require('../../music-recogniser/src');
-const { YouTubeTracklistExtractor } = require('@dj-tools/youtube-tracklist');
+const { YouTubeTracklistExtractor } = require('@music-tools/youtube-tracklist');
 const YouTubeService = require('./YouTubeService');
 
 /**
@@ -10,7 +10,7 @@ const YouTubeService = require('./YouTubeService');
  * 2. Comment analysis (uses youtube-tracklist to check comments)
  * 
  * NOTE: This class is designed for SINGLE TRACK recognition only.
- * For DJ mixes, live sets, or multi-track content, use @dj-tools/youtube-tracklist.
+ * For DJ mixes, live sets, or multi-track content, use @music-tools/youtube-tracklist.
  */
 class YouTubeTrackRecogniser {
   constructor(options = {}) {

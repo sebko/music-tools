@@ -1,5 +1,5 @@
 {
-  "name": "@dj-tools/youtube-setlist-recogniser",
+  "name": "@music-tools/youtube-setlist-recogniser",
   "version": "1.0.0",
   "description": "Recognize and extract tracklists from YouTube DJ sets, mixes, and long-form music content",
   "main": "src/index.js",
@@ -22,7 +22,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-org/dj-tools",
+    "url": "https://github.com/your-org/music-tools",
     "directory": "packages/youtube-setlist-recogniser"
   },
   "files": [
@@ -36,7 +36,7 @@
     "example:basic": "node examples/basic-usage.js"
   },
   "dependencies": {
-    "@dj-tools/youtube-tracklist": "workspace:*",
+    "@music-tools/youtube-tracklist": "workspace:*",
     "@trackid/music-recogniser": "workspace:*",
     "commander": "^11.1.0",
     "dotenv": "^16.6.1",

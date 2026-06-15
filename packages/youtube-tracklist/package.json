@@ -1,5 +1,5 @@
 {
-  "name": "@dj-tools/youtube-tracklist",
+  "name": "@music-tools/youtube-tracklist",
   "version": "1.0.0",
   "type": "module",
   "description": "Extract tracklists from YouTube video comments",

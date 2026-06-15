@@ -1,11 +1,11 @@
-# @dj-tools/youtube-tracklist
+# @music-tools/youtube-tracklist
 
 Extract tracklists from YouTube video comments using Claude AI. Supports multiple languages and intelligent context analysis.
 
 ## Installation
 
 ```bash
-pnpm add @dj-tools/youtube-tracklist
+pnpm add @music-tools/youtube-tracklist
 ```
 
 ## Setup
@@ -38,16 +38,16 @@ export ANTHROPIC_API_KEY="your_anthropic_api_key"
 ### Standalone Installation
 ```bash
 # Extract tracklist from a YouTube video
-npx @dj-tools/youtube-tracklist extract "https://youtube.com/watch?v=VIDEO_ID"
+npx @music-tools/youtube-tracklist extract "https://youtube.com/watch?v=VIDEO_ID"
 
 # With options
-npx @dj-tools/youtube-tracklist extract "VIDEO_ID" --max-comments 500 --min-confidence 0.5
+npx @music-tools/youtube-tracklist extract "VIDEO_ID" --max-comments 500 --min-confidence 0.5
 
 # JSON output
-npx @dj-tools/youtube-tracklist extract "VIDEO_ID" --format json
+npx @music-tools/youtube-tracklist extract "VIDEO_ID" --format json
 
 # Setup help
-npx @dj-tools/youtube-tracklist setup
+npx @music-tools/youtube-tracklist setup
 ```
 
 ### Development in Monorepo
@@ -71,7 +71,7 @@ pnpm --filter youtube-tracklist cli setup
 ## Programmatic Usage
 
 ```typescript
-import { YouTubeTracklistExtractor, extractTracklist } from '@dj-tools/youtube-tracklist';
+import { YouTubeTracklistExtractor, extractTracklist } from '@music-tools/youtube-tracklist';
 
 // Simple usage
 const result = await extractTracklist('https://youtube.com/watch?v=VIDEO_ID');
@@ -170,7 +170,7 @@ If you get "No tracks found in the comments":
 ### Environment Setup
 Create a `.env` file in the **root directory**:
 ```bash
-# From the root of the dj-tools project
+# From the root of the music-tools project
 cp .env.example .env
 # Edit .env with your API keys
 ```
