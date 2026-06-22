@@ -22,16 +22,27 @@ files that any Claude session can read on demand.
 
 2. Start the detached session with the backend window. `tee` keeps the live
    output visible if the user runs `tmux attach -t mm-dev`, while also capturing
-   it to the log file:
+   it to the log file.
+
+   **Node version matters:** the native module `better-sqlite3` is compiled
+   against the version pinned in `.nvmrc` (`lts-krypton` / Node 24). The window
+   must run that version or the backend crashes on every DB call with
+   `NODE_MODULE_VERSION` / `ERR_DLOPEN_FAILED`. tmux's `-c` sets the cwd via
+   `chdir()`, which does **not** fire fnm's `use-on-cd` hook, and the
+   `backend`/`frontend` subdirs have no `.nvmrc` of their own. So start the
+   window in the **package root** (which has `.nvmrc`), run `fnm use` to resolve
+   it (no hardcoded version — reads `.nvmrc`), then `cd` into the subdir
+   (fnm keeps the resolved version when a dir has no `.nvmrc`):
    ```bash
-   tmux new-session -d -s mm-dev -n backend -c /Users/sebastiankey/github/music-tools/packages/singles-metadata-manager/backend
-   tmux send-keys -t mm-dev:backend 'npm run dev 2>&1 | tee /tmp/mm-backend.log' Enter
+   tmux new-session -d -s mm-dev -n backend -c /Users/sebastiankey/github/music-tools/packages/singles-metadata-manager
+   tmux send-keys -t mm-dev:backend 'fnm use; cd backend; node -v; npm run dev 2>&1 | tee /tmp/mm-backend.log' Enter
    ```
 
-3. Add the frontend window (enforce port 5174, fail loudly if taken):
+3. Add the frontend window (enforce port 5174, fail loudly if taken). Same
+   package-root start + `fnm use` + `cd` pattern as the backend:
    ```bash
-   tmux new-window -t mm-dev -n frontend -c /Users/sebastiankey/github/music-tools/packages/singles-metadata-manager/frontend
-   tmux send-keys -t mm-dev:frontend 'npm run dev -- --port 5174 --strictPort 2>&1 | tee /tmp/mm-frontend.log' Enter
+   tmux new-window -t mm-dev -n frontend -c /Users/sebastiankey/github/music-tools/packages/singles-metadata-manager
+   tmux send-keys -t mm-dev:frontend 'fnm use; cd frontend; node -v; npm run dev -- --port 5174 --strictPort 2>&1 | tee /tmp/mm-frontend.log' Enter
    ```
 
    These `tmux` commands return immediately (the session is detached), so do NOT
