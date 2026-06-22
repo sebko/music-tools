@@ -19,25 +19,19 @@ Music-tagger is a local music library management application focused on displayi
 ### Development Philosophy
 - **Web-first development**: Build as web app initially for faster iteration
 - **Electron migration ready**: Architecture designed for future desktop app conversion
-- **Portable database**: SQLite file can be stored on external drives alongside music files
 - **Local-first**: No cloud dependencies, all data stays on user's machine
 
 ## Database Strategy
 
 ### SQLite Configuration
-- Single `.db` file for complete portability
-- Default location: `./music-library.db` in app directory
-- User-configurable database location for external drive storage
-- Handles drive mounting/unmounting scenarios gracefully
-
-### External Drive Support Pattern
-```
-External Drive Structure:
-/Volumes/Music-Drive/
-├── Music/           # User's music files
-├── music-library.db # SQLite database
-└── album-art/       # Cached album artwork
-```
+- Single `.db` file stored alongside the code (no external-drive setup required)
+- Default location: `backend/prisma/music-library.db`, set via `DATABASE_URL="file:./music-library.db"`
+  (the relative `file:` path resolves relative to `backend/prisma/`, where `schema.prisma` lives)
+- `DATABASE_URL` stays an env var for one reason only: **test ↔ dev ↔ prod DB isolation**.
+  `server.js` loads `.env.test` (separate `test-music-library.db`) when `NODE_ENV=test`. Ship the
+  default value in `.env`/`.env.template` so a fresh clone needs no DB configuration.
+- The music files themselves still live wherever `MUSIC_LIBRARY_PATH` points (e.g. an external drive);
+  only the SQLite DB is local to the repo.
 
 ### Database Schema Design
 - **albums** table: album metadata, artwork paths, directory info
@@ -372,7 +366,6 @@ Claude Code may ONLY:
   - Isolated test database (`test-music-library.db`) separate from development data
 - Unit tests for API endpoints and database operations
 - Integration tests for music file scanning and metadata extraction
-- Test external drive scenarios and database portability
 - Mock external APIs (MusicBrainz) for consistent testing
 - You made a change to the buttons and it broke the frontend. Can you remember to, at the very least, do some test (maybe npm lint? npm build? whatever you think is best) before asking me to verify the code?
 - Remember that the docs for the Muisctracker api are in /docs/music-tracker-api.md
