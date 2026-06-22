@@ -971,7 +971,7 @@ function StepDuplicates({ onNext, onBack }) {
 
 const PHASE_LABELS = {
   checking: "Checking integrity",
-  setAlbumTags: "Tagging albums",
+  setAlbumTags: "Writing month grouping tags",
   syncingPreScrub: "Syncing database",
   scrubbing: "Scrubbing tags",
   syncingPostScrub: "Syncing database",
@@ -984,7 +984,7 @@ const PHASE_LABELS = {
 
 const FINALISE_PHASES = [
   { id: "checking", label: "Integrity check (beet bad)" },
-  { id: "setAlbumTags", label: "Album tags" },
+  { id: "setAlbumTags", label: "Month grouping tags" },
   { id: "normalizingGenres", label: "Genre normalisation" },
   { id: "artwork", label: "Album art" },
   { id: "ftintitle", label: '"feat." into title' },
