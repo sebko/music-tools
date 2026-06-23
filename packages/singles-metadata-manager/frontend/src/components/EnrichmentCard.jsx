@@ -136,6 +136,10 @@ const EnrichmentCard = forwardRef(function EnrichmentCard(
         if (!bodyRef.current) return;
         await bodyRef.current.applyIfNeeded();
       },
+      async runAiScanIfNeeded() {
+        if (!bodyRef.current) return;
+        await bodyRef.current.runAiScanIfNeeded();
+      },
     }),
     [],
   );
@@ -310,9 +314,16 @@ const EnrichmentCardBody = forwardRef(function EnrichmentCardBody(
         if (!hasSelectedFields) return;
         await performApply();
       },
+      // Triggered by the parent's "Run AI scan on all" button. No-op if this
+      // card was already scanned (or is mid-scan); handleAiScan owns its own
+      // loading/error state so one card failing never aborts the batch.
+      async runAiScanIfNeeded() {
+        if (aiState === "loaded" || aiState === "loading") return;
+        await handleAiScan();
+      },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [applyState, hasSelectedFields, selectedFields, selectedGenres, displayedProposed],
+    [applyState, hasSelectedFields, selectedFields, selectedGenres, displayedProposed, aiState],
   );
 
   const remoteGenres = aiResult
