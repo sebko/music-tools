@@ -15,6 +15,7 @@ import {
   AlertCircle,
   Loader,
   FolderOpen,
+  Sparkles,
 } from "lucide-react";
 import {
   fetchInboxStatus,
@@ -138,6 +139,25 @@ function InboxPage() {
   // "Continue import" can apply any unsaved selections before resuming the
   // post-enrichment phases. Indexed by reviewableResults order.
   const cardRefs = useRef([]);
+
+  // "Run AI scan on all" runs Claude over every reviewable card sequentially
+  // (gentler on the API than firing all at once). Each card renders its own
+  // scanning/scanned/error state, so a single failure never aborts the batch.
+  const [bulkScan, setBulkScan] = useState({ running: false, done: 0, total: 0 });
+
+  const handleScanAll = async () => {
+    const cards = cardRefs.current.filter(Boolean);
+    setBulkScan({ running: true, done: 0, total: cards.length });
+    for (let i = 0; i < cards.length; i++) {
+      try {
+        await cards[i].runAiScanIfNeeded?.();
+      } catch {
+        // Card surfaces its own error; keep going through the batch.
+      }
+      setBulkScan((s) => ({ ...s, done: i + 1 }));
+    }
+    setBulkScan((s) => ({ ...s, running: false }));
+  };
 
   const resumeMutation = useMutation({
     mutationFn: async () => {
@@ -368,11 +388,29 @@ function InboxPage() {
             <p className="text-sm text-foreground/70">
               Review metadata for {reviewableResults.length} track
               {reviewableResults.length === 1 ? "" : "s"}. Last.fm genre
-              suggestions are shown by default; click <strong>AI genre scan</strong>
-              {" "}on any card to pull richer suggestions from Claude. Edit
-              fields and genres as needed — your selections will be written
-              automatically when you click <strong>Apply &amp; continue import</strong>.
+              suggestions are shown by default. Click <strong>Run AI scan on all</strong>
+              {" "}to pull richer suggestions from Claude for every track at once,
+              or scan individual cards. Edit fields and genres as needed — your
+              selections will be written automatically when you click{" "}
+              <strong>Apply &amp; continue import</strong>.
             </p>
+            <div className="flex justify-end">
+              <Button
+                variant="default"
+                size="md"
+                onClick={handleScanAll}
+                disabled={bulkScan.running || resumeMutation.isPending}
+              >
+                {bulkScan.running ? (
+                  <Loader className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                {bulkScan.running
+                  ? `Scanning ${bulkScan.done}/${bulkScan.total}…`
+                  : `Run AI scan on all ${reviewableResults.length} track${reviewableResults.length === 1 ? "" : "s"}`}
+              </Button>
+            </div>
             <div className="space-y-4">
               {reviewableResults.map((r, i) => (
                 <EnrichmentCard
@@ -397,7 +435,7 @@ function InboxPage() {
                 variant="primary"
                 size="md"
                 onClick={() => resumeMutation.mutate()}
-                disabled={resumeMutation.isPending}
+                disabled={resumeMutation.isPending || bulkScan.running}
               >
                 {resumeMutation.isPending ? (
                   <Loader className="w-4 h-4 animate-spin" />

@@ -971,7 +971,7 @@ function StepDuplicates({ onNext, onBack }) {
 
 const PHASE_LABELS = {
   checking: "Checking integrity",
-  setAlbumTags: "Tagging albums",
+  setAlbumTags: "Writing month grouping tags",
   syncingPreScrub: "Syncing database",
   scrubbing: "Scrubbing tags",
   syncingPostScrub: "Syncing database",
@@ -983,11 +983,36 @@ const PHASE_LABELS = {
 };
 
 const FINALISE_PHASES = [
-  { id: "checking", label: "Integrity check (beet bad)" },
-  { id: "setAlbumTags", label: "Album tags" },
-  { id: "normalizingGenres", label: "Genre normalisation" },
-  { id: "artwork", label: "Album art" },
-  { id: "ftintitle", label: '"feat." into title' },
+  {
+    id: "checking",
+    label: "Integrity check (beet bad)",
+    description:
+      "Scans every file with mp3val / flac -t to flag corruption. Reports only — never changes files or blocks the run.",
+  },
+  {
+    id: "setAlbumTags",
+    label: "Month grouping tags",
+    description:
+      "Writes ALBUM, ALBUMARTIST and track number so tracks group chronologically by month in your player.",
+  },
+  {
+    id: "normalizingGenres",
+    label: "Genre normalisation",
+    description:
+      "Tidies genre tags — title-cases, de-duplicates, and fixes multi-value encoding (null-separated ID3 / Vorbis).",
+  },
+  {
+    id: "artwork",
+    label: "Album art",
+    description:
+      "Embeds a generated 500×500 cover showing the month label, so each track carries its month artwork.",
+  },
+  {
+    id: "ftintitle",
+    label: '"feat." into title',
+    description:
+      'Moves "feat. X" out of the artist field and into the track title, keeping the artist field clean.',
+  },
   // scrubbing + replaygain removed — both corrupt FLAC audio frames
   // (upstream beets #2743). See ALL_PHASES comment in
   // libraryProcessingPipeline.js for details.
@@ -1044,18 +1069,28 @@ function StepFinalise({ onNext }) {
       </p>
 
       {!hasStarted && (
-        <div className="card-brutalist p-3 space-y-1">
+        <div className="card-brutalist p-3 space-y-3">
           {FINALISE_PHASES.map((phase) => (
             <label
               key={phase.id}
-              className="flex items-center gap-2 text-sm font-mono text-foreground/80 cursor-pointer hover:text-foreground"
+              className="flex items-start gap-2 cursor-pointer group"
             >
               <input
                 type="checkbox"
+                className="mt-1"
                 checked={selected.has(phase.id)}
                 onChange={() => togglePhase(phase.id)}
               />
-              <span>{phase.label}</span>
+              <span className="flex flex-col gap-0.5">
+                <span className="text-sm font-mono text-foreground/80 group-hover:text-foreground">
+                  {phase.label}
+                </span>
+                {phase.description && (
+                  <span className="text-xs font-mono text-foreground/50">
+                    {phase.description}
+                  </span>
+                )}
+              </span>
             </label>
           ))}
         </div>

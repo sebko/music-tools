@@ -187,14 +187,16 @@ function getClient() {
 // genre-rich, taxonomy-friendly sources so obscure subgenres (plugg, rage,
 // cumbia rebajada, dub variants) come back as the specific tag rather than
 // the umbrella term. Subdomains match automatically — no protocol, no wildcard.
+// NOTE: genius.com and pitchfork.com block Anthropic's web_search crawler,
+// and listing a blocked domain in allowed_domains makes the API reject the
+// WHOLE request with a 400 (not just skip that site). Keep this list to
+// crawler-accessible domains only.
 const WEB_SEARCH_ALLOWED_DOMAINS = [
   "rateyourmusic.com",
   "discogs.com",
   "bandcamp.com",
   "boomkat.com",
   "ra.co",
-  "genius.com",
-  "pitchfork.com",
   "en.wikipedia.org",
 ];
 
