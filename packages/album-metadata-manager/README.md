@@ -34,21 +34,29 @@ leaves your computer.
 
 ## Setup
 
-All commands are run from this package directory
-(`packages/album-metadata-manager`) unless noted.
+Each step below says which directory to run it from. Steps 1 and 4 run from the
+**repo root**; steps 2 and 3 run from this package's **`backend/`** directory.
 
-### 1. Install dependencies
+### 1. Install and build the workspace
 
-From the repo root (installs the whole workspace; also generates the Prisma client):
+From the **repo root** (installs every package, generates the Prisma client, and
+builds the shared component library this app's frontend imports):
 
 ```bash
 pnpm install
+pnpm build
 ```
+
+> `pnpm build` is required once on a fresh clone. The frontend imports the shared
+> `@music-tools/my-component-library` from its built `dist/`, which isn't checked
+> in — without this step `pnpm dev:frontend` fails to resolve that import. After
+> the first build, day-to-day you only run the `dev:*` scripts in step 4.
 
 ### 2. Configure the backend
 
+From `packages/album-metadata-manager/backend`:
+
 ```bash
-cd backend
 cp .env.template .env
 ```
 
@@ -63,14 +71,19 @@ Then edit `backend/.env` and set, at minimum:
 
 ### 3. Set up the database
 
+Also from `packages/album-metadata-manager/backend`:
+
 ```bash
-cd backend
 npx prisma migrate dev
 ```
 
 This creates `backend/prisma/music-library.db`. See [Database](#database).
 
 ### 4. Run it
+
+Run the `dev:*` scripts from this package's root
+(`packages/album-metadata-manager`) — not from `backend/`, where the previous two
+steps left you (`cd ..` first):
 
 ```bash
 # Terminal 1 — backend API (http://localhost:3001)
@@ -81,6 +94,12 @@ pnpm dev:frontend
 ```
 
 Open **http://localhost:5173**.
+
+> **Using Claude Code?** This package ships a `start-dev` skill that runs both
+> servers in a detached `tmux` session (`mt-dev`), so they outlive the Claude
+> session and write logs to `/tmp/mt-backend.log` and `/tmp/mt-frontend.log`. Ask
+> Claude to "start the dev servers" (or invoke `/start-dev`) instead of opening
+> two terminals. Stop them with `tmux kill-session -t mt-dev`.
 
 ### 5. Connect Plex
 
@@ -144,8 +163,14 @@ npx prisma migrate reset   # wipe the DB (your music files are untouched)
 ## Testing
 
 End-to-end tests use Playwright with copy-based isolation (tests run against temporary
-copies of your music files and an isolated test database):
+copies of your music files and an isolated test database). Run from this package's root
+(`packages/album-metadata-manager`):
 
 ```bash
 pnpm test:e2e
 ```
+
+The runner seeds each run from `MUSIC_LIBRARY_PATH` (the same value as your
+`backend/.env`), so make sure that points at a real folder of audio files before running
+— otherwise the copy step has nothing to copy. On the first run, install the Playwright
+browsers once with `pnpm test:e2e:install`.
