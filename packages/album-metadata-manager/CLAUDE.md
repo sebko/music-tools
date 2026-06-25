@@ -195,7 +195,7 @@ REDACTED_API_KEY=your_api_key
 REDACTED_DOMAIN=redacted.sh
 REDACTED_USER_ID=your_user_id
 
-# Cloudflare caching proxy — off by default; enable per-machine in .env.local
+# Cloudflare caching proxy — off by default; enable in your gitignored .env
 REDACTED_USE_CLOUDFLARE=false
 CLOUDFLARE_WORKER_URL=
 ```

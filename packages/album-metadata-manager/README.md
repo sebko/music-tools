@@ -108,23 +108,19 @@ All configuration lives in `backend/.env` (copied from `backend/.env.template`).
 | `CLOUDFLARE_WORKER_URL` | – | Worker URL, only used when the proxy is enabled. |
 | `PLEX_URL` | – | Plex base URL (default `http://localhost:32400`). Token/server are set in-app. |
 
-### Per-machine overrides (`.env.local`)
-
-On startup the backend loads `backend/.env` and then, if present,
-`backend/.env.local` — values in `.env.local` win. `.env.local` is gitignored, so it's
-the place to put settings that are specific to **your** machine and shouldn't be shared.
+All your config and secrets live in `backend/.env`, which is gitignored — so anything you
+set there (including the Cloudflare toggle below) stays local and is never committed.
+`backend/.env.template` is the committed reference; the shipped defaults there are safe.
 
 ### Cloudflare caching proxy (optional)
 
-The repo ships with the proxy **disabled** (`REDACTED_USE_CLOUDFLARE=false`), so a fresh
+The template ships with the proxy **disabled** (`REDACTED_USE_CLOUDFLARE=false`), so a fresh
 clone talks to Redacted directly. The optional Cloudflare Worker in [`cloudflare/`](./cloudflare/)
 caches Redacted responses to improve performance and respect rate limits.
 
-To enable it on your own machine without changing the shared default, create
-`backend/.env.local`:
+To enable it, set these in your (gitignored) `backend/.env`:
 
 ```bash
-# backend/.env.local  (gitignored)
 REDACTED_USE_CLOUDFLARE=true
 CLOUDFLARE_WORKER_URL=https://your-worker.workers.dev
 ```
