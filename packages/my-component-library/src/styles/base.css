@@ -3,6 +3,28 @@
 
 @import '../assets/fonts/fonts.css';
 
+/* Animated accent hue.
+   Registering --hue as a typed custom property lets the browser interpolate
+   it, so the --main rotation runs entirely on the compositor with no JS.
+   --main / --main-hover compose this hue into their OKLCH components below. */
+@property --hue {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 259.61;
+}
+
+@keyframes main-hue-cycle {
+  to {
+    --hue: 619.61; /* 259.61 + 360 = one full rotation */
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    animation: main-hue-cycle 36s linear infinite;
+  }
+}
+
 :root {
   /* Light theme */
   --background: 93.46% 0.0304 254.32;
@@ -10,8 +32,8 @@
   --foreground: 0% 0 0;
   --border: 0% 0 0;
   --shadow-color: 0 0 0;
-  --main: 67.47% 0.9 259.61;
-  --main-hover: 60% 0.15 259.61;
+  --main: 67.47% 0.9 var(--hue);
+  --main-hover: 60% 0.15 var(--hue);
   --main-foreground: 100% 0 0;
   --destructive: 55% 0.25 25;
 }
@@ -23,8 +45,8 @@
   --foreground: 92.49% 0 0;
   --border: 92.49% 0 0;
   --shadow-color: 235 235 235;
-  --main: 67.47% 0.9 259.61;
-  --main-hover: 75% 0.18 259.61;
+  --main: 67.47% 0.9 var(--hue);
+  --main-hover: 75% 0.18 var(--hue);
   --main-foreground: 92.49% 0 0;
   --destructive: 65% 0.25 25;
 }
