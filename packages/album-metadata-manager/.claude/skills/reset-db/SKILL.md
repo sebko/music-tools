@@ -1,5 +1,6 @@
 ---
-description: Reset database by deleting all records (music files are safe) (project)
+name: reset-db
+description: "album-metadata-manager: Reset database by deleting all records (music files are safe)"
 ---
 
 # reset-db

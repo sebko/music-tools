@@ -355,10 +355,16 @@ function AlbumsPage() {
       <>
         <CardGrid>
           {albums.map((album, indexInPage) => {
-            // Matched and synced albums go to sync page; unmatched go to details page
-            const linkPath = ((album.matchStatus === 'MATCHED' || album.matchStatus === 'SYNCED') && album.redactedId)
-              ? `/albums/${album.id}/sync/${album.redactedId}`
-              : `/albums/${album.id}`;
+            // Matched albums go to the sync page (apply match → Plex); synced albums
+            // go to the read-only synced review page; unmatched go to details page.
+            let linkPath;
+            if (album.matchStatus === 'SYNCED' && album.redactedId) {
+              linkPath = `/albums/${album.id}/synced/${album.redactedId}`;
+            } else if (album.matchStatus === 'MATCHED' && album.redactedId) {
+              linkPath = `/albums/${album.id}/sync/${album.redactedId}`;
+            } else {
+              linkPath = `/albums/${album.id}`;
+            }
 
             return (
               <Link key={album.id} to={linkPath}>

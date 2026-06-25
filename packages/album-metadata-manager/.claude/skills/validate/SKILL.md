@@ -1,5 +1,6 @@
 ---
-description: Run frontend validation checks (lint and build)
+name: validate
+description: "album-metadata-manager: Run frontend validation checks (lint and build)"
 ---
 
 Running frontend validation checks...

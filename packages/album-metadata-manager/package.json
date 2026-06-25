@@ -30,6 +30,9 @@
     "test:e2e:install": "playwright install",
     "format": "prettier --write \"**/*.{js,jsx,json,css,md}\" --ignore-path .prettierignore"
   },
+  "dependencies": {
+    "@music-tools/my-component-library": "workspace:*"
+  },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
     "prettier": "^3.6.2"

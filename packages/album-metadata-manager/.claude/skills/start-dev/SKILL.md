@@ -1,5 +1,6 @@
 ---
-description: Start album-metadata-manager backend and frontend dev servers in a detached tmux session
+name: start-dev
+description: "album-metadata-manager: Start backend and frontend dev servers in a detached tmux session"
 ---
 
 Start both album-metadata-manager dev servers inside a **detached tmux session** so they
@@ -49,8 +50,11 @@ whichever checkout you last started.
    pnpm install --dir "$ROOT"
 
    # (b) Belt-and-suspenders: ensure the Prisma client exists even if a workspace
-   #     postinstall was skipped. Idempotent and fast.
-   npm --prefix "$ROOT/packages/album-metadata-manager/backend" exec prisma generate
+   #     postinstall was skipped. Idempotent and fast. Must run FROM the backend
+   #     dir — `prisma generate` resolves the schema from the cwd, and `npm
+   #     --prefix` only changes where the package is resolved, not the cwd, so it
+   #     would look in the repo root and fail to find prisma/schema.prisma.
+   (cd "$ROOT/packages/album-metadata-manager/backend" && npx prisma generate)
 
    # (c) Bootstrap gitignored env files into a worktree by copying from the main
    #     checkout (DATABASE_URL is an absolute path, safe on this one machine).

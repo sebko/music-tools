@@ -1,3 +1,7 @@
+---
+name: run-e2e-tests
+description: "album-metadata-manager: Run Playwright end-to-end tests with selectable modes (headed, debug, UI, browser-specific, HAR, report)"
+---
 # run-e2e-tests
 
 Run end-to-end tests for the album-metadata-manager application with various modes and options.

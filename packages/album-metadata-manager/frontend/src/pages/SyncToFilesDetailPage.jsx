@@ -393,12 +393,16 @@ function SyncToFilesDetailPage() {
           {/* Style Row - read-only info display (Plex styles) */}
           <InfoTagRow label="Style" values={plexStyleRaw} />
 
-          {/* Tags Row - syncable: File genres (left) vs Plex genres+styles merged (right) */}
+          {/* Tags Row - syncable: File genres (left) vs Plex genres+styles merged (right).
+              additive: the file write MERGES Plex tags into the file's existing tags
+              (union), so nothing on the left is ever lost — see plexToFileWriter's
+              mergeAndNormalizeGenres. The row reflects that (no "would be lost" red). */}
           <GenreStylesRow
             label="Tags"
             leftValues={fileGenres}
             rightValues={plexTags}
             fieldName="genre"
+            additive
             selectedFields={selectedFields}
             toggleField={toggleField}
             isSynced={isFieldSynced(syncedFields, "genre")}

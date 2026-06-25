@@ -1,5 +1,6 @@
 ---
-description: Kill all crashed/duplicate backend and frontend servers
+name: cleanup-tasks
+description: "album-metadata-manager: Kill all crashed/duplicate backend and frontend servers"
 ---
 
 # cleanup-tasks
