@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { ChevronLeft, ChevronRight, X, ExternalLink, ZoomIn, ZoomOut } from 'lucide-react'
 
-// items: [{ source: 'musicbrainz'|'spotify'|'discogs', url: string }]
+// items: [{ source: 'musicbrainz'|'redacted', url: string }]
 export default function Lightbox({ items, initialIndex = 0, onClose }) {
   const containerRef = useRef(null)
   const [index, setIndex] = useState(initialIndex)

@@ -4,7 +4,7 @@ import { REDACTED } from "../constants/metadataServices";
 /**
  * Search metadata for a single album (multi-strategy search)
  * @param {number} albumId - Album ID to search for
- * @param {string[]} services - Array of services ['redacted', 'discogs']
+ * @param {string[]} services - Array of services (e.g. ['redacted'])
  * @param {string|null} customQuery - Optional custom search query
  * @returns {Promise<Object>} Search results
  */
@@ -23,7 +23,7 @@ export async function searchAlbumMetadata(albumId, services = [REDACTED], custom
  * Simple browse-only metadata search (no multi-strategy, exact query)
  * @param {number} albumId - Album ID to search for
  * @param {string} query - Exact search query
- * @param {string[]} services - Array of services ['redacted', 'discogs']
+ * @param {string[]} services - Array of services (e.g. ['redacted'])
  * @returns {Promise<Object>} Search results
  */
 export async function searchAlbumMetadataSimple(albumId, query, services = [REDACTED]) {

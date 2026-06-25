@@ -5,7 +5,7 @@ import { REDACTED } from "../../constants/metadataServices.js";
 /**
  * Core metadata scanning function - used by both individual and bulk scanning
  * @param {number} albumId - Album ID to search metadata for
- * @param {string[]} services - Array of services to search ['redacted', 'discogs']
+ * @param {string[]} services - Array of services to search (e.g. ['redacted'])
  * @param {string|null} customQuery - Optional custom search query, otherwise generated from album
  * @param {boolean} normalizeQuery - Whether to normalize search queries (default: true)
  * @param {number} page - Page number for results (default: 1)
@@ -47,10 +47,6 @@ export async function scanAlbumMetadata(
       try {
         if (service === REDACTED) {
           results[REDACTED] = await searchRedactedService(searchQuery, album, normalizeQuery, page);
-        } else if (service === "discogs") {
-          // TODO: Implement Discogs search
-          console.log("Discogs search not yet implemented");
-          results.discogs = [];
         } else {
           console.warn(`Unknown metadata service: ${service}`);
         }

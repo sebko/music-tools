@@ -59,8 +59,8 @@ Always:
 ## Development Environment
 
 ### Node.js Setup
-- Node.js v20 (LTS jod) as specified in `.nvmrc`
-- Use `nvm use` to switch to correct version
+- Node.js version is pinned in `.nvmrc`
+- Use `nvm use` to switch to the correct version
 
 ### Project Structure
 ```
@@ -127,7 +127,7 @@ Environment variables are loaded when Node.js processes start and are NOT update
 1. **Album Library View**: Grid/list display of ~5000 albums with pagination
 2. **Album Detail Pages**: Individual album view with track listings and metadata
 3. **Manual Library Scanning**: "Scan Library" button for importing music files
-4. **Metadata Lookup**: Multi-API integration (Spotify, MusicBrainz, Discogs)
+4. **Metadata Lookup**: Redacted (primary) + MusicBrainz integration
 5. **Album Artwork**: Display embedded artwork from music files
 
 ### API Design (REST Endpoints)
@@ -167,35 +167,12 @@ Environment variables are loaded when Node.js processes start and are NOT update
   - Lookup release: `/ws/2/release/{mbid}`
 - **Data Returned**: Album title, artist, release date, track count, genres, MBID
 
-#### Spotify Web API
-- **Docs**: https://developer.spotify.com/documentation/web-api
-- **Base URL**: `https://api.spotify.com/v1`
-- **Authentication**: Client Credentials flow (OAuth 2.0)
-  - Token endpoint: `https://accounts.spotify.com/api/token`
-  - Token lifespan: 1 hour
-- **Rate Limiting**: ~100 requests per second (generous limits)
-- **Key Endpoints**:
-  - Search: `GET /v1/search?q=...&type=album&limit=10`
-  - Get album: `GET /v1/albums/{id}`
-  - Get artist (for genres): `GET /v1/artists/{id}`
-- **Data Returned**: Album title, artist, release date, track count, genres (from artist), cover art
-
-#### Discogs API
-- **Docs**: https://www.discogs.com/developers
-- **Base URL**: `https://api.discogs.com`
-- **Authentication**: Personal access token via `Authorization: Discogs token={token}` header
-- **Rate Limiting**: 60 requests per minute for authenticated requests
-- **Key Endpoints**:
-  - Search: `GET /database/search?q=...&type=release&artist=...&title=...`
-  - Get release: `GET /releases/{id}`
-- **Data Returned**: Album title, artist, release year, genres/styles, label, catalog number, cover images
-
-#### MusicTracker/Redacted API
+#### Redacted API
 - **Docs**: `/docs/music-tracker-api.md` (full documentation stored locally)
 - **Base URL**: `https://{user-domain}/ajax.php`
 - **Authentication**: `Authorization: {api_key}` header
 - **Rate Limiting**: 10 requests per 10 seconds (strictly enforced)
-  - Implemented via `musicTrackerLimiter` with per-API-key queuing
+  - Implemented via `RedactedRateLimiter` with per-API-key queuing
 - **Key Endpoints**:
   - Search/Browse: `GET /ajax.php?action=browse&searchstr={query}`
   - Get torrent group: `GET /ajax.php?action=torrentgroup&id={id}`
@@ -206,20 +183,21 @@ Environment variables are loaded when Node.js processes start and are NOT update
   - Includes rip quality metadata (FLAC, MP3, etc.)
 
 ### Environment Variables Required
+See `backend/.env.template` for the full, authoritative list. Key variables:
 ```
 # Backend .env file
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-DISCOGS_TOKEN=your_discogs_token
-MUSICBRAINZ_CONTACT_INFO=user@example.com
+MUSIC_LIBRARY_PATH=/path/to/your/music/folder
+MUSICBRAINZ_USER_AGENT=AlbumMetadataManager/1.0
+MUSICBRAINZ_CONTACT_INFO=you@example.com
 
-# MusicTracker (Optional)
-MUSICTRACKER_ENABLED=false
-MUSICTRACKER_API_KEY=your_api_key
-MUSICTRACKER_DOMAIN=your_domain
-MUSICTRACKER_RATE_LIMIT_REQUESTS=10
-MUSICTRACKER_RATE_LIMIT_WINDOW=10000
-MUSICTRACKER_MIN_REQUEST_DELAY=1200
+# Redacted (primary metadata source)
+REDACTED_API_KEY=your_api_key
+REDACTED_DOMAIN=redacted.sh
+REDACTED_USER_ID=your_user_id
+
+# Cloudflare caching proxy — off by default; enable per-machine in .env.local
+REDACTED_USE_CLOUDFLARE=false
+CLOUDFLARE_WORKER_URL=
 ```
 
 ## Frontend Data Fetching Standards

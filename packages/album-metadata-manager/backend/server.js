@@ -53,6 +53,10 @@ if (process.env.NODE_ENV === "test") {
 } else {
   // override: true ensures our .env wins over values pre-loaded by Prisma client
   dotenv.config({ override: true });
+
+  // Machine-local overrides (gitignored). Lets an individual machine flip flags
+  // like REDACTED_USE_CLOUDFLARE on without changing the shared, shipped defaults.
+  dotenv.config({ path: ".env.local", override: true });
 }
 
 const app = express();
@@ -1630,14 +1634,6 @@ app.post("/api/albums/:id/metadata-search", async (req, res) => {
       }
     }
 
-    // Discogs search (placeholder)
-    if (services.includes("discogs")) {
-      results.discogs = {
-        results: [],
-        message: "Discogs search not yet implemented",
-      };
-    }
-
     res.json({
       success: true,
       results,
@@ -1731,14 +1727,6 @@ app.post("/api/albums/:id/metadata-search/simple", async (req, res) => {
           hasMore: false,
         };
       }
-    }
-
-    // Discogs search (placeholder)
-    if (services.includes("discogs")) {
-      results.discogs = {
-        results: [],
-        message: "Discogs search not yet implemented",
-      };
     }
 
     res.json({

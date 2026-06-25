@@ -1,50 +1,166 @@
-# Music Tagger
+# Album Metadata Manager
 
-Local music library management application for organizing and correcting ID3 metadata.
+A local web app for cleaning up the metadata in a [Plex](https://www.plex.tv/) music
+library. It scans your Plex albums into a local database, matches each album against
+[Redacted](https://redacted.sh/) to pull accurate genres, year, label and high-res
+artwork, and lets you review and sync the corrected metadata back to Plex and/or to the
+underlying audio files.
 
-## Quick Start
+Everything runs on your own machine — there's no hosted service and your library never
+leaves your computer.
 
-1. **Install dependencies**
-   ```bash
-   # Backend
-   cd backend && npm install
+## What it does
 
-   # Frontend
-   cd frontend && npm install
-   ```
+- **Scan** your Plex music library into a local SQLite database.
+- **Match** albums against Redacted with a confidence-scored, multi-strategy search
+  (uses your snatched torrents, artist discography, and browse search).
+- **Review** matches album-by-album, or run a bulk scan across the whole library.
+- **Sync** corrected metadata back to Plex, or write it down into the audio files
+  themselves (ID3 / Vorbis tags).
+- **Artwork**: pull hi-res cover art from Redacted, or search external sources
+  (MusicHoarders) and embed your own.
+- **Wizards** for library housekeeping:
+  - _Favourites_ — shortlist and copy out your favourite albums.
+  - _Album Deleter_ — review and safely remove albums.
+  - _Files → Plex_ — push file-based metadata up into Plex.
+- **MusicBrainz** is used as a secondary lookup (no API key required).
 
-2. **Configure environment**
+## Requirements
 
-   Create `backend/.env`:
-   ```
-   DATABASE_URL="file:./music-library.db"
-   MUSIC_LIBRARY_PATH="/path/to/your/music/folder"
+- **Node.js** — version pinned in [`.nvmrc`](./.nvmrc) (`nvm use`)
+- **pnpm** — this package is part of the music-tools pnpm monorepo
+- A **Plex Media Server** with a music library
+- A **Redacted** account + API key (for metadata/artwork lookups)
 
-   # Optional API keys for metadata lookup
-   SPOTIFY_CLIENT_ID=your_spotify_client_id
-   SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-   DISCOGS_TOKEN=your_discogs_token
-   ```
+## Setup
 
-3. **Run application**
-   ```bash
-   # Terminal 1 - Backend (port 3001)
-   cd backend && npm run dev
+All commands are run from this package directory
+(`packages/album-metadata-manager`) unless noted.
 
-   # Terminal 2 - Frontend (port 5173)
-   cd frontend && npm run dev
-   ```
+### 1. Install dependencies
 
-4. **Open http://localhost:5173**
+From the repo root (installs the whole workspace; also generates the Prisma client):
 
-## Database Setup
+```bash
+pnpm install
+```
+
+### 2. Configure the backend
+
+```bash
+cd backend
+cp .env.template .env
+```
+
+Then edit `backend/.env` and set, at minimum:
+
+- `MUSIC_LIBRARY_PATH` — folder containing your audio files (can be an external drive)
+- `REDACTED_API_KEY` — Redacted ▸ User Settings ▸ Access Settings ▸ create an API key
+- `REDACTED_USER_ID` — your Redacted user id (enables the "snatched torrents" search)
+
+`.env` is gitignored — your keys stay local. See
+[Configuration](#configuration) below for the full list.
+
+### 3. Set up the database
 
 ```bash
 cd backend
 npx prisma migrate dev
 ```
 
-## Required Configuration
+This creates `backend/prisma/music-library.db`. See [Database](#database).
 
-- **DATABASE_URL**: SQLite database file location
-- **MUSIC_LIBRARY_PATH**: Path to your music folder for scanning
+### 4. Run it
+
+```bash
+# Terminal 1 — backend API (http://localhost:3001)
+pnpm dev:backend
+
+# Terminal 2 — frontend (http://localhost:5173)
+pnpm dev:frontend
+```
+
+Open **http://localhost:5173**.
+
+### 5. Connect Plex
+
+Open the **Settings** page in the app and connect to Plex via OAuth, then pick the
+server and music library to use. The Plex token and server selection are stored in the
+database (not in env) so you can switch servers without editing files. Only the Plex
+base URL (`PLEX_URL`) comes from `.env`.
+
+Once connected, use **Scan Library** to import your albums, then start matching.
+
+## Configuration
+
+All configuration lives in `backend/.env` (copied from `backend/.env.template`).
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `PORT` | – | Backend port (default `3001`). The frontend dev proxy reads this automatically. |
+| `MUSIC_LIBRARY_PATH` | ✅ | Folder containing your audio files. |
+| `REDACTED_API_KEY` | ✅ | Redacted API key (primary metadata + artwork source). |
+| `REDACTED_DOMAIN` | ✅ | Redacted domain (`redacted.sh`). |
+| `REDACTED_USER_ID` | – | Your Redacted user id — enables the snatched-torrents search strategy. |
+| `REDACTED_RATE_LIMIT_*` / `REDACTED_MIN_REQUEST_DELAY` | – | Rate-limit tuning. Defaults respect Redacted's 10 requests / 10 seconds limit. |
+| `MUSICBRAINZ_USER_AGENT` / `MUSICBRAINZ_CONTACT_INFO` | – | Identifies you to MusicBrainz (no key required). |
+| `REDACTED_USE_CLOUDFLARE` | – | Route Redacted calls through a Cloudflare caching proxy. **Off by default** — see below. |
+| `CLOUDFLARE_WORKER_URL` | – | Worker URL, only used when the proxy is enabled. |
+| `PLEX_URL` | – | Plex base URL (default `http://localhost:32400`). Token/server are set in-app. |
+
+### Per-machine overrides (`.env.local`)
+
+On startup the backend loads `backend/.env` and then, if present,
+`backend/.env.local` — values in `.env.local` win. `.env.local` is gitignored, so it's
+the place to put settings that are specific to **your** machine and shouldn't be shared.
+
+### Cloudflare caching proxy (optional)
+
+The repo ships with the proxy **disabled** (`REDACTED_USE_CLOUDFLARE=false`), so a fresh
+clone talks to Redacted directly. The optional Cloudflare Worker in [`cloudflare/`](./cloudflare/)
+caches Redacted responses to improve performance and respect rate limits.
+
+To enable it on your own machine without changing the shared default, create
+`backend/.env.local`:
+
+```bash
+# backend/.env.local  (gitignored)
+REDACTED_USE_CLOUDFLARE=true
+CLOUDFLARE_WORKER_URL=https://your-worker.workers.dev
+```
+
+See [`cloudflare/README.md`](./cloudflare/README.md) for deploying the worker.
+
+## Database
+
+- A single SQLite file, **stored alongside the code by default** at
+  `backend/prisma/music-library.db` (no external-drive setup needed).
+- Only the database is local to the repo; your actual audio files stay wherever
+  `MUSIC_LIBRARY_PATH` points.
+- `DATABASE_URL` is kept as an env var (rather than hardcoded) so that the test suite
+  can use an isolated database — `server.js` loads `.env.test` (a separate
+  `test-music-library.db`) when `NODE_ENV=test`. The default value ships in
+  `.env.template`, so a fresh clone needs no database configuration.
+
+Useful commands (run from `backend/`):
+
+```bash
+npx prisma migrate dev     # apply migrations / create the DB
+npx prisma studio          # browse the database
+npx prisma migrate reset   # wipe the DB (your music files are untouched)
+```
+
+## Tech stack
+
+- **Backend**: Node.js + Express, Prisma ORM over SQLite, `@ctrl/plex` for Plex.
+- **Frontend**: React + Vite + Tailwind CSS, TanStack Query for data fetching.
+- **Metadata**: Redacted (primary), MusicBrainz (secondary).
+
+## Testing
+
+End-to-end tests use Playwright with copy-based isolation (tests run against temporary
+copies of your music files and an isolated test database):
+
+```bash
+pnpm test:e2e
+```

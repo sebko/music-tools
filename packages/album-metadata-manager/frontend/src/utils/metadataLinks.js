@@ -17,9 +17,7 @@ export function getMetadataServiceUrl(serviceName, externalId) {
   const serviceMap = {
     musicbrainz: (id) => `https://musicbrainz.org/release/${id}`,
     redacted: (id) => `https://redacted.sh/torrents.php?id=${id}`,
-    // Easy to add more services:
-    // spotify: (id) => `https://open.spotify.com/album/${id}`,
-    // discogs: (id) => `https://www.discogs.com/release/${id}`,
+    // Easy to add more services, e.g.:
     // lastfm: (id) => `https://www.last.fm/music/${encodeURIComponent(id)}`,
   };
 

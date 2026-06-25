@@ -277,7 +277,6 @@ export async function searchRedacted(
     }
 
     const responseData = await searchResponse.json();
-    console.log(`Redacted API response (page ${page}):`, responseData);
 
     if (
       !responseData.response ||
@@ -447,7 +446,6 @@ export async function searchRedactedAdvanced(
     }
 
     const responseData = await searchResponse.json();
-    console.log(`Redacted advanced API response (page ${page}):`, responseData);
 
     if (
       !responseData.response ||
@@ -1071,12 +1069,6 @@ async function getUserSnatchedTorrents(userId, apiKey, domain) {
       rawResponse: torrent,
     }));
 
-    // DEBUG: Log first snatched torrent to see structure
-    if (formatted.length > 0) {
-      console.log(`  DEBUG: First snatched torrent artistId = ${formatted[0].artistId}`);
-      console.log(`  DEBUG: Raw torrent data:`, formatted[0].rawResponse);
-    }
-
     return formatted;
   };
 
@@ -1135,24 +1127,13 @@ async function searchArtistDiscography(artistId, album, apiKey, domain) {
     // Score each torrent group in artist's discography
     const results = [];
     console.log(
-      `  🔍 DEBUG: Processing ${data.response.torrentgroup.length} albums from artist discography...`
+      `  Processing ${data.response.torrentgroup.length} albums from artist discography...`
     );
     for (const group of data.response.torrentgroup) {
       // Parse artist from the existing artists[] array (avoids additional API calls!)
       // The artist API response includes group.artists[] with the correct artist name
       const artists = group.artists || [];
       const artistNames = artists.map(a => a.name).join(", ");
-
-      // DEBUG: Log artist data for EVERY album to see what's happening
-      console.log(
-        `  🐛 Album: "${group.groupName}" - artists array: [${artists
-          .map(a => a?.name || "null")
-          .join(", ")}] - extracted: "${artistNames}" - fallback: "${data.response.name}"`
-      );
-
-      if (group.groupName === "Campfire Songs") {
-        console.log(`  🎯 FOUND CAMPFIRE SONGS!`);
-      }
 
       const result = {
         title: decodeHtmlEntities(group.groupName),
@@ -1231,7 +1212,6 @@ export async function getTorrentGroup(groupId, apiKey = null, domain = null) {
     }
 
     const data = await response.json();
-    console.log("Redacted torrentgroup response:", data);
 
     if (!data.response || !data.response.group) {
       console.log(`Redacted torrent group ${groupId} not found`);
