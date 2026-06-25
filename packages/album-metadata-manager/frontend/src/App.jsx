@@ -1,6 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@music-tools/my-component-library";
-import { useHueRotation } from "./hooks/useHueRotation";
 import { LibraryProvider } from "./contexts/LibraryContext.jsx";
 import Layout from "./components/Layout";
 import AppErrorBoundary from "./components/AppErrorBoundary";
@@ -19,9 +18,6 @@ import AlbumDeleterPage from "./pages/AlbumDeleterPage";
 import SettingsPage from "./pages/SettingsPage";
 
 function App() {
-  // Start the quirky hue rotation animation
-  useHueRotation();
-
   return (
     <ThemeProvider>
       <Router>
