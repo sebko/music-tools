@@ -8,5 +8,8 @@
     "dev:backend": "pnpm run kill:backend && cd backend && pnpm run dev",
     "dev:frontend": "pnpm run kill:frontend && cd frontend && pnpm run dev",
     "build": "cd frontend && pnpm run build"
+  },
+  "dependencies": {
+    "@music-tools/my-component-library": "workspace:*"
   }
 }

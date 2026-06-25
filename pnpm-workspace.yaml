@@ -4,3 +4,13 @@ packages:
   - 'packages/album-metadata-manager/backend'
   - 'packages/singles-metadata-manager/frontend'
   - 'packages/singles-metadata-manager/backend'
+onlyBuiltDependencies:
+  - '@biomejs/biome'
+  - '@prisma/client'
+  - '@prisma/engines'
+  - better-sqlite3
+  - better-sqlite3-multiple-ciphers
+  - esbuild
+  - prisma
+  - sqlite3
+  - unrs-resolver
