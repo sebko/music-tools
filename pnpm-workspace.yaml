@@ -4,13 +4,16 @@ packages:
   - 'packages/album-metadata-manager/backend'
   - 'packages/singles-metadata-manager/frontend'
   - 'packages/singles-metadata-manager/backend'
-onlyBuiltDependencies:
-  - '@biomejs/biome'
-  - '@prisma/client'
-  - '@prisma/engines'
-  - better-sqlite3
-  - better-sqlite3-multiple-ciphers
-  - esbuild
-  - prisma
-  - sqlite3
-  - unrs-resolver
+# Dependency install/build scripts are blocked by default in pnpm 10+ (supply-chain
+# safety). These are explicitly approved so `pnpm install` compiles native modules
+# (better-sqlite3, esbuild) and runs prisma's generate step.
+allowBuilds:
+  '@biomejs/biome': true
+  '@prisma/client': true
+  '@prisma/engines': true
+  better-sqlite3: true
+  better-sqlite3-multiple-ciphers: true
+  esbuild: true
+  prisma: true
+  sqlite3: true
+  unrs-resolver: true
