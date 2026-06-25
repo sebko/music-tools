@@ -1,0 +1,8 @@
+{
+  "delay": "2000",
+  "verbose": false,
+  "signal": "SIGTERM",
+  "killSignal": "SIGKILL",
+  "watch": ["*.js", "services/**/*.js", "constants/**/*.js", "tests/**/*.js"],
+  "ignore": ["node_modules/**", "*.test.js", ".env*"]
+}

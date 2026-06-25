@@ -1,0 +1,6 @@
+packages:
+  - 'packages/*'
+  - 'packages/album-metadata-manager/frontend'
+  - 'packages/album-metadata-manager/backend'
+  - 'packages/singles-metadata-manager/frontend'
+  - 'packages/singles-metadata-manager/backend'

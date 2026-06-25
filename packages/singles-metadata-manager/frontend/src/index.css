@@ -1,0 +1,47 @@
+@import '@music-tools/my-component-library/styles';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-base;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-heading;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-background-secondary rounded-base;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-main rounded-base;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-main-hover;
+  }
+
+  /* Focus styles for accessibility */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-main ring-offset-2 ring-offset-background;
+  }
+}

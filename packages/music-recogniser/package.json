@@ -1,0 +1,72 @@
+{
+  "name": "@trackid/music-recogniser",
+  "version": "1.0.0",
+  "description": "Pure audio recognition API with intensity modes using multiple services (Shazam, AudD, ACRCloud)",
+  "main": "src/index.js",
+  "types": "types/index.d.ts",
+  "keywords": [
+    "music",
+    "recognition",
+    "audio",
+    "fingerprinting",
+    "shazam",
+    "audd",
+    "acrcloud",
+    "identification",
+    "tracks",
+    "songs",
+    "intensity",
+    "ham",
+    "modular"
+  ],
+  "author": "TrackID Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/trackid",
+    "directory": "packages/music-recogniser"
+  },
+  "files": [
+    "src/",
+    "types/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "example:basic": "node examples/basic-usage.js",
+    "example:advanced": "node examples/advanced-config.js"
+  },
+  "dependencies": {
+    "axios": "^1.10.0",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^16.6.1",
+    "form-data": "^4.0.3"
+  },
+  "peerDependencies": {
+    "ffmpeg": "*"
+  },
+  "peerDependenciesMeta": {
+    "ffmpeg": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "eslint": "^8.0.0",
+    "jest": "^30.0.4"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/your-org"
+  }
+}

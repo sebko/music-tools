@@ -1,0 +1,274 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum MatchStatus {
+  UNMATCHED
+  MATCHED
+  SYNCED
+}
+
+enum SwipeDecision {
+  KEEP
+  SKIP
+}
+
+enum CopyStatus {
+  PENDING
+  COPIED
+  SKIPPED_EXISTS
+  FAILED
+}
+
+enum DeleteDecision {
+  DELETE
+  SKIP
+}
+
+enum DeleteStatus {
+  PENDING
+  DELETED
+  FAILED
+}
+
+// AUTH: a Plex login. One token grants access to owned + shared servers.
+model PlexAccount {
+  id        String   @id @default(cuid())
+  authToken String   @map("auth_token")
+  username  String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  servers   PlexServer[]
+
+  @@map("plex_accounts")
+}
+
+// SERVER: a Plex Media Server. machineIdentifier is the stable Plex id (survives renames);
+// name is a mutable display label. accessToken reaches this specific server (owned or shared).
+model PlexServer {
+  id                String    @id @default(cuid())
+  accountId         String    @map("account_id")
+  machineIdentifier String    @unique @map("machine_identifier")
+  name              String
+  accessToken       String    @map("access_token")
+  isEnabled         Boolean   @default(true) @map("is_enabled")
+  lastConnectedAt   DateTime? @map("last_connected_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  account   PlexAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  libraries PlexLibrary[]
+
+  @@map("plex_servers")
+}
+
+// LIBRARY SCOPE: a music section on a server. sectionKey is stable per server; title is display.
+model PlexLibrary {
+  id         String   @id @default(cuid())
+  serverId   String   @map("server_id")
+  sectionKey String   @map("section_key")
+  title      String
+  type       String   @default("artist")
+  isEnabled  Boolean  @default(true) @map("is_enabled")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  server              PlexServer       @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  albums              Album[]
+  appSetting          AppSettings[]
+  swipesAsSource      FavouriteSwipe[] @relation("swipeSource")
+  swipesAsDestination FavouriteSwipe[] @relation("swipeDest")
+  deletionSwipes      DeletionSwipe[]
+
+  @@unique([serverId, sectionKey])
+  @@index([serverId])
+  @@map("plex_libraries")
+}
+
+// FAVOURITES WIZARD: one judged album per (source, destination) library pair.
+// Title/artist/location are snapshotted at swipe time so the copy step and
+// summary work without re-querying Plex.
+model FavouriteSwipe {
+  id                   String        @id @default(cuid())
+  sourceLibraryId      String        @map("source_library_id")
+  destinationLibraryId String        @map("destination_library_id")
+  ratingKey            String        @map("rating_key") // album ratingKey in the SOURCE library
+  title                String
+  artist               String
+  location             String? // album directory path on disk (from Plex)
+  decision             SwipeDecision
+  copyStatus           CopyStatus?   @map("copy_status") // PENDING for KEEP, null for SKIP
+  copyError            String?       @map("copy_error")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+
+  sourceLibrary      PlexLibrary @relation("swipeSource", fields: [sourceLibraryId], references: [id], onDelete: Cascade)
+  destinationLibrary PlexLibrary @relation("swipeDest", fields: [destinationLibraryId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceLibraryId, destinationLibraryId, ratingKey])
+  @@index([sourceLibraryId, destinationLibraryId, decision])
+  @@map("favourite_swipes")
+}
+
+// ALBUM DELETER: one judged album per library. DELETE marks the album folder for
+// moving to the volume Trash (batched, user-confirmed); SKIP leaves it alone.
+model DeletionSwipe {
+  id           String         @id @default(cuid())
+  libraryId    String         @map("library_id")
+  ratingKey    String         @map("rating_key")
+  title        String
+  artist       String
+  genre        String? // comma-separated Plex genres, captured at swipe time
+  location     String? // album directory path on disk (from Plex)
+  decision     DeleteDecision
+  deleteStatus DeleteStatus?  @map("delete_status") // PENDING for DELETE, null for SKIP
+  deleteError  String?        @map("delete_error")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  library PlexLibrary @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+
+  @@unique([libraryId, ratingKey])
+  @@index([libraryId, decision])
+  @@map("deletion_swipes")
+}
+
+// App-level presentation state (kept out of the domain tables).
+model AppSettings {
+  id              String   @id @default("singleton")
+  activeLibraryId String?  @map("active_library_id")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  activeLibrary   PlexLibrary? @relation(fields: [activeLibraryId], references: [id], onDelete: SetNull)
+
+  @@map("app_settings")
+}
+
+model Album {
+  id              String   @id // SHA256 hash of file_path + libraryId - stable across Plex rescans
+  plexRatingKey   String   @map("plex_rating_key") // Current Plex ID for API calls
+  filePath        String   @map("file_path") // Album directory path from Plex
+  title           String   // Album title for grid display
+  artist          String   // Artist name for grid display
+
+  // Sortable fields from Plex
+  year            Int?     // Release year for sorting
+  addedAt         DateTime? @map("added_at") // When added to Plex
+  titleSort       String?  @map("title_sort") // Sortable title (for proper alphabetical)
+  genre           String?  // Primary genre for filtering
+  folderCreatedAt DateTime? @map("folder_created_at") // Filesystem folder creation date
+
+  // Artwork dimensions (populated during library scan)
+  artworkWidth    Int?     @map("artwork_width")
+  artworkHeight   Int?     @map("artwork_height")
+
+  // Match status tracking
+  matchStatus     MatchStatus @default(UNMATCHED) @map("match_status")
+  syncedAt        DateTime?   @map("synced_at")
+
+  // Library scope (FK to the owning Plex library)
+  libraryId       String   @map("library_id")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  library          PlexLibrary @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  metadataMatches  AlbumMetadataServiceMatch[]
+  plexFileSync     PlexFileSync?
+  redactedPlexSync RedactedPlexSync?
+  syncFailures     SyncFailure[]
+
+  @@unique([libraryId, plexRatingKey])
+  @@index([libraryId])
+  @@index([libraryId, matchStatus])
+  @@map("albums")
+}
+
+model MetadataService {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique // e.g., "musicbrainz", "allmusic", "lastfm"
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  albumMatches AlbumMetadataServiceMatch[]
+
+  @@map("metadata_services")
+}
+
+model AlbumMetadataServiceMatch {
+  id                Int      @id @default(autoincrement())
+  albumId           String   @map("album_id")
+  metadataServiceId Int      @map("metadata_service_id")
+  externalId        String   @map("external_id") // ID in external service
+
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  // Relations
+  album             Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  metadataService   MetadataService @relation(fields: [metadataServiceId], references: [id], onDelete: Cascade)
+
+  @@unique([albumId, metadataServiceId, externalId])
+  @@map("album_metadata_service_matches")
+}
+
+model PlexFileSync {
+  id              Int      @id @default(autoincrement())
+  albumId         String   @unique @map("album_id")
+
+  // Track which fields were synced (JSON for flexibility)
+  // e.g. {"genre": true, "title": false, "artist": false, ...}
+  syncedFields    String   @default("{}") @map("synced_fields")
+
+  // When last synced
+  lastSyncedAt    DateTime @map("last_synced_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relation
+  album           Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+  @@map("plex_file_syncs")
+}
+
+model RedactedPlexSync {
+  id              Int      @id @default(autoincrement())
+  albumId         String   @unique @map("album_id")
+
+  // Track which fields were synced from Redacted to Plex (JSON for flexibility)
+  // e.g. {"title": true, "year": true, "tags": true, "artwork": false, ...}
+  syncedFields    String   @default("{}") @map("synced_fields")
+
+  // When last synced
+  lastSyncedAt    DateTime @map("last_synced_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relation
+  album           Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+  @@map("redacted_plex_syncs")
+}
+
+model SyncFailure {
+  id          Int      @id @default(autoincrement())
+  albumId     String   @map("album_id")
+  operation   String   // "bulk_scan" | "bulk_sync_plex" | "bulk_sync_files"
+  error       String   // Error message
+  details     String?  // JSON with extra context (file path, API response, etc.)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relation
+  album       Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+  @@map("sync_failures")
+}

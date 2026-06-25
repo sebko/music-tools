@@ -1,0 +1,38 @@
+{
+  "name": "@music-tools/youtube-tracklist",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Extract tracklists from YouTube video comments",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "echo \"No tests specified\" && exit 0",
+    "cli": "node dist/cli.js"
+  },
+  "bin": {
+    "youtube-tracklist": "./dist/cli.js"
+  },
+  "keywords": ["youtube", "tracklist", "comments", "dj", "music"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.27.0",
+    "googleapis": "^144.0.0",
+    "dotenv": "^16.4.5",
+    "commander": "^12.1.0"
+  }
+}

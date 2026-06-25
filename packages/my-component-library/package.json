@@ -1,0 +1,45 @@
+{
+  "name": "@music-tools/my-component-library",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "main": "dist/my-component-library.js",
+  "module": "dist/my-component-library.js",
+  "exports": {
+    ".": {
+      "import": "./dist/my-component-library.js"
+    },
+    "./styles": "./src/styles/base.css",
+    "./tailwind-preset": "./src/tailwind/preset.js"
+  },
+  "files": [
+    "dist",
+    "src/tailwind",
+    "src/styles"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.544.0",
+    "tailwind-merge": "^3.3.1"
+  },
+  "devDependencies": {
+    "@storybook/addon-mcp": "^0.4.2",
+    "@storybook/react-vite": "^10.3.3",
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "storybook": "^10.3.3",
+    "tailwindcss": "^3.4.17",
+    "vite": "^7.1.2"
+  }
+}

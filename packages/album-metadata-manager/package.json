@@ -1,0 +1,37 @@
+{
+  "name": "@music-tools/album-metadata-manager",
+  "version": "1.0.0",
+  "description": "A local music library management application",
+  "scripts": {
+    "kill:backend": "lsof -ti:3001 | xargs kill -9 2>/dev/null || true",
+    "kill:frontend": "(lsof -ti:5173,5174,5175,5176,5177,5178,5179,5180 | xargs kill -9 2>/dev/null || true) && (pkill -f 'vite.*frontend' 2>/dev/null || true)",
+    "dev:backend": "pnpm run kill:backend && cd backend && pnpm run dev",
+    "dev:frontend": "pnpm run kill:frontend && cd frontend && pnpm run dev",
+    "dev:backend:tee": "pnpm run kill:backend && cd backend && pnpm run dev 2>&1 | tee -a ../backend.dev.log",
+    "dev:frontend:tee": "pnpm run kill:frontend && cd frontend && pnpm run dev 2>&1 | tee -a ../frontend.dev.log",
+    "tail:backend": "tail -f backend.dev.log",
+    "tail:frontend": "tail -f frontend.dev.log",
+    "install:all": "echo 'Use pnpm install from repo root instead'",
+    "build": "cd frontend && pnpm run build",
+    "test:e2e": "node frontend/e2e/test-runner.js",
+    "test:e2e:headed": "node frontend/e2e/test-runner.js --headed",
+    "test:e2e:ui": "node frontend/e2e/test-runner.js --ui",
+    "test:e2e:debug": "node frontend/e2e/test-runner.js --debug",
+    "test:e2e:chromium": "node frontend/e2e/test-runner.js --project=chromium",
+    "test:e2e:firefox": "node frontend/e2e/test-runner.js --project=firefox",
+    "test:e2e:webkit": "node frontend/e2e/test-runner.js --project=webkit",
+    "test:e2e:with-har": "RECORD_HAR=true node frontend/e2e/test-runner.js",
+    "test:e2e:clean": "pkill -f 'playwright.*test' || true; lsof -ti:3001,5173,5174,5175,5176,5177,5178,5179,5180 | xargs kill -9 2>/dev/null || true; rm -rf /Volumes/T7/test-music-* 2>/dev/null || true; echo '✅ E2E processes and temp files cleaned up'",
+    "test:e2e:status": "echo '🔍 Checking running E2E processes:'; echo 'Playwright:'; pgrep -f 'playwright.*test' || echo '  None running'; echo 'Backend (3001):'; lsof -ti:3001 || echo '  None running'; echo 'Frontend (5173-5180):'; lsof -ti:5173,5174,5175,5176,5177,5178,5179,5180 || echo '  None running'; echo 'Temp dirs:'; ls -d /Volumes/T7/test-music-* 2>/dev/null || echo '  None found'",
+    "test:e2e:raw": "playwright test",
+    "test:e2e:report": "playwright show-report frontend/e2e/reports/html-report",
+    "test:e2e:report:open": "open frontend/e2e/reports/html-report/index.html",
+    "test:e2e:results": "echo '🔗 Opening latest test results...' && (test -f frontend/e2e/reports/html-report/index.html && open frontend/e2e/reports/html-report/index.html) || (test -f playwright-report/index.html && open playwright-report/index.html) || echo '❌ No recent test reports found'",
+    "test:e2e:install": "playwright install",
+    "format": "prettier --write \"**/*.{js,jsx,json,css,md}\" --ignore-path .prettierignore"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "prettier": "^3.6.2"
+  }
+}
