@@ -93,24 +93,13 @@ Once connected, use **Scan Library** to import your albums, then start matching.
 
 ## Configuration
 
-All configuration lives in `backend/.env` (copied from `backend/.env.template`).
+All configuration lives in `backend/.env` (copied from `backend/.env.template`). `.env`
+is gitignored, so your keys and any machine-specific settings stay local and are never
+committed.
 
-| Variable | Required | Description |
-| --- | --- | --- |
-| `PORT` | – | Backend port (default `3001`). The frontend dev proxy reads this automatically. |
-| `MUSIC_LIBRARY_PATH` | ✅ | Folder containing your audio files. |
-| `REDACTED_API_KEY` | ✅ | Redacted API key (primary metadata + artwork source). |
-| `REDACTED_DOMAIN` | ✅ | Redacted domain (`redacted.sh`). |
-| `REDACTED_USER_ID` | – | Your Redacted user id — enables the snatched-torrents search strategy. |
-| `REDACTED_RATE_LIMIT_*` / `REDACTED_MIN_REQUEST_DELAY` | – | Rate-limit tuning. Defaults respect Redacted's 10 requests / 10 seconds limit. |
-| `MUSICBRAINZ_USER_AGENT` / `MUSICBRAINZ_CONTACT_INFO` | – | Identifies you to MusicBrainz (no key required). |
-| `REDACTED_USE_CLOUDFLARE` | – | Route Redacted calls through a Cloudflare caching proxy. **Off by default** — see below. |
-| `CLOUDFLARE_WORKER_URL` | – | Worker URL, only used when the proxy is enabled. |
-| `PLEX_URL` | – | Plex base URL (default `http://localhost:32400`). Token/server are set in-app. |
-
-All your config and secrets live in `backend/.env`, which is gitignored — so anything you
-set there (including the Cloudflare toggle below) stays local and is never committed.
-`backend/.env.template` is the committed reference; the shipped defaults there are safe.
+**[`backend/.env.template`](./backend/.env.template) is the single source of truth** for
+the full list of variables — every one is documented inline there. The only values you
+must fill in are covered in [Setup](#setup); everything else ships with working defaults.
 
 ### Cloudflare caching proxy (optional)
 

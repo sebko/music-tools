@@ -187,7 +187,6 @@ See `backend/.env.template` for the full, authoritative list. Key variables:
 ```
 # Backend .env file
 MUSIC_LIBRARY_PATH=/path/to/your/music/folder
-MUSICBRAINZ_USER_AGENT=AlbumMetadataManager/1.0
 MUSICBRAINZ_CONTACT_INFO=you@example.com
 
 # Redacted (primary metadata source)
