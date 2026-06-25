@@ -9,6 +9,7 @@ import AlbumDetailPage from "./pages/AlbumDetailPage";
 import AlbumMetadataSearchPage from "./pages/AlbumMetadataSearchPage";
 import MatchMetadataPage from "./pages/MatchMetadataPage";
 import SyncMetadataPage from "./pages/SyncMetadataPage";
+import SyncedAlbumPage from "./pages/SyncedAlbumPage";
 import SyncToFilesPage from "./pages/SyncToFilesPage";
 import SyncToFilesDetailPage from "./pages/SyncToFilesDetailPage";
 import SyncFailuresPage from "./pages/SyncFailuresPage";
@@ -33,6 +34,7 @@ function App() {
             <Route path="/albums/:id/metadata-search" element={<AlbumMetadataSearchPage />} />
             <Route path="/albums/:id/match/:groupId" element={<MatchMetadataPage />} />
             <Route path="/albums/:id/sync/:groupId" element={<SyncMetadataPage />} />
+            <Route path="/albums/:id/synced/:groupId" element={<SyncedAlbumPage />} />
             <Route path="/sync-to-files" element={<SyncToFilesPage />} />
             <Route path="/sync-to-files/:id" element={<SyncToFilesDetailPage />} />
             <Route path="/sync-failures" element={<SyncFailuresPage />} />
