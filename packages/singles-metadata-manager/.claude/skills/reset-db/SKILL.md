@@ -1,5 +1,6 @@
 ---
-description: Reset beets library DB and state.pickle for a clean re-import
+name: reset-db
+description: "singles-metadata-manager: Reset beets library DB and state.pickle for a clean re-import"
 ---
 
 Reset the beets library database and incremental-import state so the next wizard Import starts from scratch.

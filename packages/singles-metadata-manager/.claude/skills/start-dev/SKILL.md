@@ -1,5 +1,6 @@
 ---
-description: Start singles-metadata-manager backend and frontend dev servers in a detached tmux session
+name: start-dev
+description: "singles-metadata-manager: Start backend and frontend dev servers in a detached tmux session"
 ---
 
 Start both singles-metadata-manager dev servers inside a **detached tmux session** so they

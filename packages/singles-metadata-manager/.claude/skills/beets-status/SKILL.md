@@ -1,5 +1,6 @@
 ---
-description: Check beets installation health, plugins, and library stats
+name: beets-status
+description: "singles-metadata-manager: Check beets installation health, plugins, and library stats"
 ---
 
 Run a diagnostic check on the beets music library installation.
