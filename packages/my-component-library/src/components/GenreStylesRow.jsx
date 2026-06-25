@@ -14,6 +14,11 @@ import { TagPill } from "./TagPill";
  * @param {Function} props.toggleField - Callback to toggle field selection
  * @param {boolean} props.disabled - Whether the checkbox should be disabled
  * @param {boolean} props.isSynced - Whether this field was already synced (shows checked+disabled)
+ * @param {boolean} props.additive - When true, syncing MERGES the right values into
+ *   the left (a union) rather than replacing them. Left tags are therefore never
+ *   "lost", so they're not flagged as removed, and the only meaningful difference is
+ *   whether the right side contributes new tags. Use for merge-semantics syncs
+ *   (e.g. Plex → file genre tags); leave false for replace-semantics syncs.
  */
 export function GenreStylesRow({
   label,
@@ -24,6 +29,7 @@ export function GenreStylesRow({
   toggleField,
   disabled = false,
   isSynced = false,
+  additive = false,
 }) {
   const leftArray = leftValues || [];
   const rightArray = rightValues || [];
@@ -40,10 +46,11 @@ export function GenreStylesRow({
     a.toLowerCase().localeCompare(b.toLowerCase())
   );
 
-  // Left pills: mark as "removed" if NOT in right set (would be lost if syncing)
+  // Left pills: mark as "removed" if NOT in right set (would be lost if syncing).
+  // In additive (merge) mode nothing on the left is ever lost, so never flag it.
   const leftPills = sortedLeft.map((tag) => ({
     label: tag,
-    isRemoved: !rightSet.has(tag.toLowerCase()),
+    isRemoved: !additive && !rightSet.has(tag.toLowerCase()),
   }));
 
   // Right pills: mark as "new" if NOT in left set (would be gained if syncing)
@@ -52,9 +59,11 @@ export function GenreStylesRow({
     isNew: !leftSet.has(tag.toLowerCase()),
   }));
 
-  // Check if there are any differences in either direction
-  const hasDifferences =
-    leftPills.some((p) => p.isRemoved) || rightPills.some((p) => p.isNew);
+  // Check if there are differences worth syncing. In additive mode that means the
+  // right side brings tags the left doesn't have; otherwise any change either way.
+  const hasDifferences = additive
+    ? rightPills.some((p) => p.isNew)
+    : leftPills.some((p) => p.isRemoved) || rightPills.some((p) => p.isNew);
 
   // Show checkbox if:
   // - Field was already synced (show checked+disabled), OR
