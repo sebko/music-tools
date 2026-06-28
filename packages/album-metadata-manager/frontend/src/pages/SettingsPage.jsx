@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { CheckCircle, XCircle, Loader2 } from "lucide-react";
-import { cn, Button, PageHeader } from "@music-tools/my-component-library";
+import { cn, Button, PageHeader, ThemeToggle } from "@music-tools/my-component-library";
 import { pollPlexOAuth } from "../api/settings";
 import {
   usePlexSettings,
@@ -247,6 +247,13 @@ function SettingsPage() {
             </div>
           </>
         )}
+      </div>
+
+      <div className="bg-background-secondary border-2 border-border rounded-base p-6 shadow-base mt-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-heading text-foreground">Appearance</h2>
+          <ThemeToggle />
+        </div>
       </div>
     </div>
   );

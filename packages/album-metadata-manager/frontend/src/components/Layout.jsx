@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ThemeToggle, AppShell } from "@music-tools/my-component-library";
+import { AppShell } from "@music-tools/my-component-library";
 import LibraryToggle from "./LibraryToggle";
 import ConnectivityBanner from "./ConnectivityBanner";
 import ToolsMenu from "./ToolsMenu";
@@ -22,7 +22,6 @@ function Layout({ children }) {
         </div>
       }
       navigation={<ToolsMenu />}
-      actions={<ThemeToggle />}
     >
       <ConnectivityBanner />
       {children}
