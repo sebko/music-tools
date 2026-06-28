@@ -7,6 +7,7 @@ import { useLibraryScanManager } from "../hooks/useLibraryScanManager";
 import { useBulkMetadataScan } from "../hooks/useBulkMetadataScan";
 import { useBulkMetadataSync } from "../hooks/useBulkMetadataSync";
 import ScanProgressModal from "../components/ScanProgressModal";
+import PlexRescanModal from "../components/PlexRescanModal";
 import BulkScanProgressModal from "../components/BulkScanProgressModal";
 import BulkSyncFieldsModal from "../components/BulkSyncFieldsModal";
 import BulkSyncProgressModal from "../components/BulkSyncProgressModal";
@@ -126,6 +127,9 @@ function AlbumsPage() {
 
   // Bulk scan modal state
   const [showBulkScanModal, setShowBulkScanModal] = useState(false);
+
+  // Plex rescan chooser (delta vs full) → hands off to ScanProgressModal
+  const [showPlexRescanModal, setShowPlexRescanModal] = useState(false);
 
   // Bulk metadata sync hook
   const { startSync, isSyncing } = useBulkMetadataSync();
@@ -328,7 +332,7 @@ function AlbumsPage() {
         ) : plexConnected ? (
           // Connected with zero albums: prompt a scan, not "Connect Plex".
           <UnmatchedView
-            onButtonClick={handleStartScan}
+            onButtonClick={() => handleStartScan()}
             isStarting={isStartingScan}
             buttonText="Scan Library"
           />
@@ -452,118 +456,44 @@ function AlbumsPage() {
           }
           right={
             <div className="flex flex-wrap items-center gap-3">
-              <SearchInput
-                value={searchInput}
-                onChange={setSearchInput}
-                onSubmit={handleSearchSubmitValue}
-                onClear={handleClearSearch}
-                placeholder="Search albums"
-                className="w-48"
-              />
-
               {pagination.total > 0 && (
                 <>
-                  <div className="flex items-center gap-2">
-                    <label
-                      htmlFor="limit-select"
-                      className="text-sm font-heading text-foreground"
-                    >
-                      Show:
-                    </label>
-                    <SelectBrutalist
-                      id="limit-select"
-                      value={limit}
-                      onChange={(e) =>
-                        handleLimitChange(parseInt(e.target.value))
-                      }
-                      options={[
-                        { value: 20, label: "20" },
-                        { value: 50, label: "50" },
-                        { value: 100, label: "100" },
-                        { value: 200, label: "200" },
-                      ]}
-                      className="w-20"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <label
-                      htmlFor="sort-select"
-                      className="text-sm font-heading text-foreground"
-                    >
-                      Sort:
-                    </label>
-                    <SelectBrutalist
-                      id="sort-select"
-                      value={sortBy}
-                      onChange={(e) => handleSortChange(e.target.value)}
-                      options={[
-                        { value: "addedAt", label: "Date Added" },
-                        { value: "titleSort", label: "Album Title" },
-                        { value: "year", label: "Release Year" },
-                        { value: "folderCreatedAt", label: "Folder Created" },
-                      ]}
-                      className="w-36"
-                    />
-                    <Button
-                      onClick={() =>
-                        handleSortChange(
-                          sortBy,
-                          sortOrder === "asc" ? "desc" : "asc"
-                        )
-                      }
-                      variant="default"
-                      size="sm"
-                      title={`Sort ${
-                        sortOrder === "asc" ? "descending" : "ascending"
-                      }`}
-                    >
-                      {sortOrder === "asc" ? (
-                        <ArrowUp className="w-4 h-4" />
-                      ) : (
-                        <ArrowDown className="w-4 h-4" />
-                      )}
-                    </Button>
-                  </div>
-
-                  {/* Rescan button - only show on unmatched filter */}
+                  {/* Unmatched actions: Plex rescan (delta/full chooser) + Bulk match */}
                   {matchFilter === "unmatched" && (
-                    <Button
-                      onClick={handleStartScan}
-                      variant="primary"
-                      size="sm"
-                      isDisabled={isStartingScan}
-                    >
-                      <Search className="w-4 h-4" />
-                      {isStartingScan ? "Starting..." : "Rescan"}
-                    </Button>
-                  )}
-
-                  {/* Bulk Scan button - only show on unmatched filter */}
-                  {matchFilter === "unmatched" && (
-                    <Button
-                      onClick={async () => {
-                        try {
-                          await startScan.mutateAsync({
-                            minConfidence: 85,
-                            includeMatched: false
-                          });
-                          setShowBulkScanModal(true);
-                        } catch (error) {
-                          console.error("Failed to start bulk scan:", error);
-                          const isAlreadyRunning = error.message?.includes('already in progress');
-                          if (isAlreadyRunning) {
+                    <>
+                      <Button
+                        onClick={() => setShowPlexRescanModal(true)}
+                        variant="primary"
+                        size="sm"
+                        isDisabled={isStartingScan}
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        {isStartingScan ? "Starting..." : "Plex rescan"}
+                      </Button>
+                      <Button
+                        onClick={async () => {
+                          try {
+                            await startScan.mutateAsync({
+                              minConfidence: 85,
+                              includeMatched: false
+                            });
                             setShowBulkScanModal(true);
+                          } catch (error) {
+                            console.error("Failed to start bulk match:", error);
+                            const isAlreadyRunning = error.message?.includes('already in progress');
+                            if (isAlreadyRunning) {
+                              setShowBulkScanModal(true);
+                            }
                           }
-                        }
-                      }}
-                      variant="secondary"
-                      size="sm"
-                      isDisabled={isScanning || startScan.isPending}
-                    >
-                      <Search className="w-4 h-4" />
-                      {startScan.isPending ? "Starting..." : "Bulk Scan"}
-                    </Button>
+                        }}
+                        variant="secondary"
+                        size="sm"
+                        isDisabled={isScanning || startScan.isPending}
+                      >
+                        <Search className="w-4 h-4" />
+                        {startScan.isPending ? "Starting..." : "Bulk match"}
+                      </Button>
+                    </>
                   )}
 
                   {/* Bulk Sync button - only show on matched filter */}
@@ -584,6 +514,83 @@ function AlbumsPage() {
           }
         />
 
+        {/* Row 2: search floated left, show/sort floated right (when there are results) */}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <SearchInput
+            value={searchInput}
+            onChange={setSearchInput}
+            onSubmit={handleSearchSubmitValue}
+            onClear={handleClearSearch}
+            placeholder="Search albums"
+            className="w-48"
+          />
+
+          {pagination.total > 0 && (
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="limit-select"
+                  className="text-sm font-heading text-foreground"
+                >
+                  Show:
+                </label>
+                <SelectBrutalist
+                  id="limit-select"
+                  value={limit}
+                  onChange={(e) => handleLimitChange(parseInt(e.target.value))}
+                  options={[
+                    { value: 20, label: "20" },
+                    { value: 50, label: "50" },
+                    { value: 100, label: "100" },
+                    { value: 200, label: "200" },
+                  ]}
+                  className="w-20"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="sort-select"
+                  className="text-sm font-heading text-foreground"
+                >
+                  Sort:
+                </label>
+                <SelectBrutalist
+                  id="sort-select"
+                  value={sortBy}
+                  onChange={(e) => handleSortChange(e.target.value)}
+                  options={[
+                    { value: "addedAt", label: "Date Added" },
+                    { value: "titleSort", label: "Album Title" },
+                    { value: "year", label: "Release Year" },
+                    { value: "folderCreatedAt", label: "Folder Created" },
+                  ]}
+                  className="w-36"
+                />
+                <Button
+                  onClick={() =>
+                    handleSortChange(
+                      sortBy,
+                      sortOrder === "asc" ? "desc" : "asc"
+                    )
+                  }
+                  variant="default"
+                  size="sm"
+                  title={`Sort ${
+                    sortOrder === "asc" ? "descending" : "ascending"
+                  }`}
+                >
+                  {sortOrder === "asc" ? (
+                    <ArrowUp className="w-4 h-4" />
+                  ) : (
+                    <ArrowDown className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Secondary filter row - only show when synced tab is active */}
         {matchFilter === "synced" && (
           <div className="mt-4">
@@ -601,6 +608,17 @@ function AlbumsPage() {
       </PageHeader>
 
       {mainContent}
+
+      {/* Plex rescan chooser: pick delta/full, then hand off to the progress modal */}
+      <PlexRescanModal
+        isOpen={showPlexRescanModal}
+        isStarting={isStartingScan}
+        onClose={() => setShowPlexRescanModal(false)}
+        onStart={async ({ force }) => {
+          setShowPlexRescanModal(false);
+          await handleStartScan({ force });
+        }}
+      />
 
       {showScanModal && (
         <ScanProgressModal

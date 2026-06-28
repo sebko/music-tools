@@ -172,6 +172,10 @@ model Album {
   artworkWidth    Int?     @map("artwork_width")
   artworkHeight   Int?     @map("artwork_height")
 
+  // Plex's own updatedAt, persisted to enable incremental (delta) rescans.
+  // Distinct from the `updatedAt` @updatedAt row clock below.
+  plexUpdatedAt   DateTime? @map("plex_updated_at")
+
   // Match status tracking
   matchStatus     MatchStatus @default(UNMATCHED) @map("match_status")
   syncedAt        DateTime?   @map("synced_at")
