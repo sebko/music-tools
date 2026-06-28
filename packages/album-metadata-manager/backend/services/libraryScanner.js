@@ -157,9 +157,18 @@ export async function upsertServiceRelease(serviceName, externalId) {
  * After a clean completion, albums whose id wasn't seen this run
  * are deleted (cascades clear their sync records).
  *
+ * Incremental by default: an album whose Plex `updatedAt` is unchanged
+ * since the last scan (and already has artwork dimensions) is skipped
+ * entirely — no detail fetch, fs.stat, artwork probe, or metadata
+ * reprocessing. Pass `{ force: true }` to do the exhaustive scan
+ * (rebuild artwork dimensions, recover from drift).
+ *
+ * @param {Object} plexLibrary - The Plex library to scan
+ * @param {Object} [options]
+ * @param {boolean} [options.force=false] - Force a full (non-delta) rescan
  * @returns {Promise<{ albumsScanned: number, servicesDiscovered: number }>}
  */
-export async function scanPlexLibrary(plexLibrary) {
+export async function scanPlexLibrary(plexLibrary, { force = false } = {}) {
   try {
     // Reset and initialize scan state
     resetScanState();
@@ -212,14 +221,23 @@ export async function scanPlexLibrary(plexLibrary) {
     // and compute stale deletions after the loop.
     const priorAlbums = await prisma.album.findMany({
       where: { libraryId },
-      select: { id: true },
+      select: {
+        id: true,
+        plexRatingKey: true,
+        plexUpdatedAt: true,
+        artworkWidth: true,
+        artworkHeight: true,
+      },
     });
     const priorAlbumIds = new Set(priorAlbums.map((a) => a.id));
+    // Lookup keyed by Plex ratingKey for the delta short-circuit below.
+    const priorByRatingKey = new Map(priorAlbums.map((a) => [a.plexRatingKey, a]));
 
     const discoveredServices = new Set();
     const seenAlbumIds = new Set();
     let insertedCount = 0;
     let updatedCount = 0;
+    let skippedCount = 0;
 
     // Step 4: Process each album
     for (const plexAlbum of allAlbums) {
@@ -233,6 +251,32 @@ export async function scanPlexLibrary(plexLibrary) {
 
       // Update current album being processed
       scanState.currentAlbum = plexAlbum.title;
+
+      // Delta short-circuit: skip the expensive per-album work (detail fetch,
+      // fs.stat, artwork probe, metadata reprocessing) when this album is
+      // unchanged since the last scan. "Unchanged" = a prior row with the same
+      // Plex ratingKey AND the same Plex updatedAt AND already-populated artwork
+      // dimensions (so previously-incomplete rows still get completed). The
+      // skipped album is still marked seen so deletion reconciliation stays correct.
+      const prior = priorByRatingKey.get(plexAlbum.id);
+      const priorUpdatedAt = prior?.plexUpdatedAt ? prior.plexUpdatedAt.getTime() : null;
+      const listUpdatedAt = plexAlbum.updatedAt ? new Date(plexAlbum.updatedAt).getTime() : null;
+      if (
+        !force &&
+        prior &&
+        priorUpdatedAt !== null &&
+        listUpdatedAt !== null &&
+        priorUpdatedAt === listUpdatedAt &&
+        prior.artworkWidth !== null &&
+        prior.artworkHeight !== null
+      ) {
+        seenAlbumIds.add(prior.id);
+        skippedCount++;
+        scanState.processedAlbums++;
+        scanState.progress = Math.round((scanState.processedAlbums / scanState.totalAlbums) * 100);
+        continue;
+      }
+
       console.log(
         `Processing album ${scanState.processedAlbums + 1}/${scanState.totalAlbums}: ${plexAlbum.title}`
       );
@@ -290,6 +334,8 @@ export async function scanPlexLibrary(plexLibrary) {
           titleSort,
           genre,
           folderCreatedAt,
+          // Persist Plex's updatedAt so the next scan can delta-skip this album.
+          plexUpdatedAt: plexAlbum.updatedAt ? new Date(plexAlbum.updatedAt) : null,
         };
 
         await prisma.album.upsert({
@@ -413,7 +459,7 @@ export async function scanPlexLibrary(plexLibrary) {
     scanState.currentAlbum = "";
 
     console.log(
-      `Scan complete: ${insertedCount} inserted, ${updatedCount} updated, ${deletedCount} deleted, ${reconciledCount} reconciled, ${scanState.errors.length} errors, ${discoveredServices.size} metadata services`
+      `Scan complete (${force ? "full" : "delta"}): ${insertedCount} inserted, ${updatedCount} updated, ${skippedCount} skipped, ${deletedCount} deleted, ${reconciledCount} reconciled, ${scanState.errors.length} errors, ${discoveredServices.size} metadata services`
     );
 
     return {

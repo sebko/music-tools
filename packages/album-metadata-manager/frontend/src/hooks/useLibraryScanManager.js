@@ -24,9 +24,9 @@ export function useLibraryScanManager() {
     }
   }, [initialScanStatus]);
 
-  const handleStartScan = async () => {
+  const handleStartScan = async ({ force = false } = {}) => {
     try {
-      await startScan.mutateAsync();
+      await startScan.mutateAsync({ force });
       // Clear stale scan progress cache so the modal opens without showing old error state
       queryClient.removeQueries({ queryKey: ['scanProgress'] });
       setShowScanModal(true);
@@ -41,9 +41,9 @@ export function useLibraryScanManager() {
     }
   };
 
-  const handleStartScanAll = async () => {
+  const handleStartScanAll = async ({ force = false } = {}) => {
     try {
-      await startScanAll();
+      await startScanAll({ force });
       queryClient.removeQueries({ queryKey: ['scanProgress'] });
       setShowScanModal(true);
     } catch (error) {

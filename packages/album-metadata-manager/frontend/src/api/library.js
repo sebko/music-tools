@@ -1,10 +1,10 @@
 import { apiJson } from "./client.js";
 
-export async function startLibraryScan() {
+export async function startLibraryScan({ force = false } = {}) {
   return apiJson("/library/scan", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ force }),
   });
 }
 
@@ -16,10 +16,10 @@ export async function fetchScanProgress() {
   return apiJson("/library/scan/progress");
 }
 
-export async function startScanAll() {
+export async function startScanAll({ force = false } = {}) {
   return apiJson("/library/scan-all", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ force }),
   });
 }

@@ -252,10 +252,12 @@ app.post("/api/library/scan", async (req, res) => {
       });
     }
 
-    console.log("🔄 Starting Plex library scan in background...");
+    // Incremental (delta) by default; `force: true` does an exhaustive rescan.
+    const force = req.body?.force === true;
+    console.log(`🔄 Starting Plex library ${force ? "full" : "delta"} scan in background...`);
 
     // Start scan in background (don't await)
-    scanPlexLibrary(req.library).catch(error => {
+    scanPlexLibrary(req.library, { force }).catch(error => {
       console.error("Background scan error:", error);
     });
 
@@ -329,8 +331,12 @@ app.post("/api/library/scan-all", async (req, res) => {
       });
     }
 
+    // Incremental (delta) by default; `force: true` does an exhaustive rescan.
+    const force = req.body?.force === true;
     const labels = libraries.map(l => `${l.server.name} ▸ ${l.title}`);
-    console.log(`🔄 Starting scan for ${libraries.length} libraries: ${labels.join(", ")}`);
+    console.log(
+      `🔄 Starting ${force ? "full" : "delta"} scan for ${libraries.length} libraries: ${labels.join(", ")}`
+    );
 
     // Scan each library sequentially in background
     (async () => {
@@ -338,7 +344,7 @@ app.post("/api/library/scan-all", async (req, res) => {
         const currentProgress = getScanProgress();
         if (currentProgress.shouldStop) break;
         try {
-          await scanPlexLibrary(lib);
+          await scanPlexLibrary(lib, { force });
         } catch (error) {
           console.error(`Scan error for library "${lib.title}":`, error);
         }
