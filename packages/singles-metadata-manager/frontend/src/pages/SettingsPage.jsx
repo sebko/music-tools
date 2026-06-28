@@ -13,6 +13,8 @@ function SettingsPage() {
   const { data, isLoading } = useSettings();
   const updateSetting = useUpdateSetting();
 
+  const savingKey = updateSetting.isPending ? updateSetting.variables?.key : null;
+
   const [libraryPath, setLibraryPath] = useState("");
   const [inboxPath, setInboxPath] = useState("");
   const [feedback, setFeedback] = useState(null);
@@ -96,10 +98,10 @@ function SettingsPage() {
               onClick={handleSave}
               variant="primary"
               size="md"
-              isDisabled={updateSetting.isPending || !libraryPath.trim()}
+              isDisabled={savingKey === "musicLibraryPath" || !libraryPath.trim()}
             >
               <Save className="w-4 h-4" />
-              {updateSetting.isPending ? "Saving..." : "Save"}
+              {savingKey === "musicLibraryPath" ? "Saving..." : "Save"}
             </Button>
           </div>
 
@@ -156,10 +158,10 @@ function SettingsPage() {
               onClick={handleSaveInbox}
               variant="primary"
               size="md"
-              isDisabled={updateSetting.isPending || !inboxPath.trim()}
+              isDisabled={savingKey === "inboxPath" || !inboxPath.trim()}
             >
               <Save className="w-4 h-4" />
-              {updateSetting.isPending ? "Saving..." : "Save"}
+              {savingKey === "inboxPath" ? "Saving..." : "Save"}
             </Button>
           </div>
 
