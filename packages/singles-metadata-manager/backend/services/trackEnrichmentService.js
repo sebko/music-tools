@@ -198,6 +198,10 @@ const WEB_SEARCH_ALLOWED_DOMAINS = [
   "boomkat.com",
   "ra.co",
   "en.wikipedia.org",
+  // DJ-store taxonomies — hyper-specific electronic/dance genre tags.
+  // Confirmed crawler-accessible 2026-07-01.
+  "beatport.com",
+  "juno.co.uk",
 ];
 
 async function callClaude(tracks, opts = {}) {
