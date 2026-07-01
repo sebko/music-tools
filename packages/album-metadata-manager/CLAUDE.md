@@ -186,7 +186,6 @@ Environment variables are loaded when Node.js processes start and are NOT update
 See `backend/.env.template` for the full, authoritative list. Key variables:
 ```
 # Backend .env file
-MUSIC_LIBRARY_PATH=/path/to/your/music/folder
 MUSICBRAINZ_CONTACT_INFO=you@example.com
 
 # Redacted (primary metadata source)

@@ -2728,27 +2728,24 @@ function getPlexDbPath() {
 app.get("/api/plex/restore-dates/preview", async (req, res) => {
   try {
     const plexDb = getPlexDbPath();
-    const libraryRoot = process.env.MUSIC_LIBRARY_PATH;
 
     if (!existsSync(plexDb)) {
       return res.status(400).json({ success: false, error: "Plex database not found" });
     }
-    if (!libraryRoot || !existsSync(libraryRoot)) {
-      return res.status(400).json({ success: false, error: "Music library path not found. Is the drive mounted?" });
-    }
 
-    // Query albums from Plex DB
+    // Query albums from Plex DB. We select the absolute track file path
+    // (media_parts.file) rather than the relative directories.path, so the
+    // album folder can be derived directly from Plex — no MUSIC_LIBRARY_PATH.
     const sep = "\x1f";
     const sql = `SELECT
        mi.id,
        mi.title,
        mi.added_at,
-       MIN(d.path) as dir_path
+       MIN(mp.file) as file_path
      FROM metadata_items mi
      JOIN metadata_items tracks ON tracks.parent_id = mi.id AND tracks.metadata_type = 10
      JOIN media_items mei ON tracks.id = mei.metadata_item_id
      JOIN media_parts mp ON mei.id = mp.media_item_id
-     JOIN directories d ON mp.directory_id = d.id
      WHERE mi.metadata_type = 9
      GROUP BY mi.id`;
 
@@ -2773,10 +2770,9 @@ app.get("/api/plex/restore-dates/preview", async (req, res) => {
     let missing = 0;
     const changes = [];
 
-    for (const [idStr, title, addedAtStr, dirPath] of rows) {
+    for (const [idStr, title, addedAtStr, filePath] of rows) {
       const currentAddedAt = parseInt(addedAtStr, 10);
-      const topLevel = dirPath.split("/")[0];
-      const folderPath = path.join(libraryRoot, topLevel);
+      const folderPath = path.dirname(filePath);
 
       try {
         const s = statSync(folderPath);
@@ -2819,13 +2815,9 @@ app.get("/api/plex/restore-dates/preview", async (req, res) => {
 app.post("/api/plex/restore-dates/apply", async (req, res) => {
   try {
     const plexDb = getPlexDbPath();
-    const libraryRoot = process.env.MUSIC_LIBRARY_PATH;
 
     if (!existsSync(plexDb)) {
       return res.status(400).json({ success: false, error: "Plex database not found" });
-    }
-    if (!libraryRoot || !existsSync(libraryRoot)) {
-      return res.status(400).json({ success: false, error: "Music library path not found. Is the drive mounted?" });
     }
 
     // Backup
@@ -2834,18 +2826,18 @@ app.post("/api/plex/restore-dates/apply", async (req, res) => {
     copyFileSync(plexDb, backupPath);
     console.log(`Backed up Plex DB to: ${backupPath}`);
 
-    // Query albums
+    // Query albums. Select the absolute track file path (media_parts.file) so
+    // the album folder is derived directly from Plex — no MUSIC_LIBRARY_PATH.
     const sep = "\x1f";
     const sql = `SELECT
        mi.id,
        mi.title,
        mi.added_at,
-       MIN(d.path) as dir_path
+       MIN(mp.file) as file_path
      FROM metadata_items mi
      JOIN metadata_items tracks ON tracks.parent_id = mi.id AND tracks.metadata_type = 10
      JOIN media_items mei ON tracks.id = mei.metadata_item_id
      JOIN media_parts mp ON mei.id = mp.media_item_id
-     JOIN directories d ON mp.directory_id = d.id
      WHERE mi.metadata_type = 9
      GROUP BY mi.id`;
 
@@ -2864,11 +2856,10 @@ app.post("/api/plex/restore-dates/apply", async (req, res) => {
 
     // Collect updates
     const updates = [];
-    for (const [idStr, title, addedAtStr, dirPath] of rows) {
+    for (const [idStr, title, addedAtStr, filePath] of rows) {
       const albumId = parseInt(idStr, 10);
       const currentAddedAt = parseInt(addedAtStr, 10);
-      const topLevel = dirPath.split("/")[0];
-      const folderPath = path.join(libraryRoot, topLevel);
+      const folderPath = path.dirname(filePath);
 
       try {
         const s = statSync(folderPath);
