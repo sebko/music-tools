@@ -40,7 +40,7 @@ function FilesToPlexPage() {
     <div className="space-y-6">
       <PageHeader
         title="Files → Plex Sync"
-        subtitle="Restores folder creation dates (birthtimes) as Plex &quot;Date Added&quot; timestamps. Useful after a Plex library rescan resets all added dates."
+        subtitle="Restores each album's on-disk creation date (birthtime) as its Plex &quot;Date Added&quot; timestamp. Useful after a Plex library rescan resets all added dates. Albums whose folder and files have no plausible creation date are skipped rather than given a bogus date."
       />
 
       <div className="flex items-start gap-3 p-4 rounded-base border-2 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20">
@@ -115,7 +115,7 @@ function FilesToPlexPage() {
       {summary && (
         <div className="rounded-base border-2 border-border bg-background-secondary p-4 space-y-4">
           <h3 className="font-heading text-lg text-foreground">Summary</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
             <div className="text-center">
               <div className="text-2xl font-heading text-foreground">
                 {summary.total}
@@ -139,6 +139,12 @@ function FilesToPlexPage() {
                 {summary.missing}
               </div>
               <div className="text-sm text-foreground/60">Folders Missing</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-heading text-orange-600 dark:text-orange-400">
+                {summary.invalid ?? 0}
+              </div>
+              <div className="text-sm text-foreground/60">No Valid Date</div>
             </div>
           </div>
 
