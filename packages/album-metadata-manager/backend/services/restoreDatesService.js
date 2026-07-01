@@ -23,8 +23,14 @@ import { execSync } from "child_process";
  * before this floor is treated as "no real creation date" and skipped rather
  * than written to Plex — writing it would replace a merely-wrong date with an
  * absurd one (e.g. 1904).
+ *
+ * The floor sits just above those epoch anchors, NOT at some "modern" date: a
+ * user may genuinely have an album downloaded/ripped in the late 90s, and that
+ * real date should be preserved. No music file's filesystem birthtime plausibly
+ * predates 1980, so 1980 cleanly rejects the 1904/1970 garbage without
+ * discarding legitimately old dates.
  */
-export const MIN_PLAUSIBLE_ADDED_AT = Math.floor(Date.UTC(2000, 0, 1) / 1000);
+export const MIN_PLAUSIBLE_ADDED_AT = Math.floor(Date.UTC(1980, 0, 1) / 1000);
 
 /** Absolute path to the local Plex Media Server SQLite database. */
 export function getPlexDbPath() {
