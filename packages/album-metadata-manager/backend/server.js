@@ -37,6 +37,7 @@ import { REDACTED } from "./constants/metadataServices.js";
 import { fetchImage, embedArtworkToAlbum } from "./services/artwork/artworkManager.js";
 import { syncAlbumToPlex } from "./services/syncService.js";
 import { writePlexMetadataToFiles } from "./services/plexToFileWriter.js";
+import { getPlexDbPath, buildRestoreDatePlan } from "./services/restoreDatesService.js";
 import { getImageDimensionsFromBuffer, isHdArtwork, HD_ARTWORK_MIN_SIZE } from "./services/imageDimensions.js";
 import { IMPLEMENTED_PLEX_TO_FILE_FIELDS } from "./constants/plexToFileSyncableFields.js";
 import { logSyncFailure, getRecentFailures, getFailureCounts, clearFailures } from "./services/failureLogger.js";
@@ -2717,14 +2718,7 @@ app.put("/api/settings/active-library", async (req, res) => {
 
 // ── Restore Plex dates from folder birthtimes (bulk, direct DB) ─────────────
 
-function getPlexDbPath() {
-  return path.join(
-    os.homedir(),
-    "Library/Application Support/Plex Media Server/Plug-in Support/Databases/com.plexapp.plugins.library.db"
-  );
-}
-
-// Preview: dry-run comparison of Plex added_at vs folder birthtimes
+// Preview: dry-run classification of Plex added_at vs on-disk birthtimes.
 app.get("/api/plex/restore-dates/preview", async (req, res) => {
   try {
     const plexDb = getPlexDbPath();
@@ -2733,75 +2727,11 @@ app.get("/api/plex/restore-dates/preview", async (req, res) => {
       return res.status(400).json({ success: false, error: "Plex database not found" });
     }
 
-    // Query albums from Plex DB. We select the absolute track file path
-    // (media_parts.file) rather than the relative directories.path, so the
-    // album folder can be derived directly from Plex — no MUSIC_LIBRARY_PATH.
-    const sep = "\x1f";
-    const sql = `SELECT
-       mi.id,
-       mi.title,
-       mi.added_at,
-       MIN(mp.file) as file_path
-     FROM metadata_items mi
-     JOIN metadata_items tracks ON tracks.parent_id = mi.id AND tracks.metadata_type = 10
-     JOIN media_items mei ON tracks.id = mei.metadata_item_id
-     JOIN media_parts mp ON mei.id = mp.media_item_id
-     WHERE mi.metadata_type = 9
-     GROUP BY mi.id`;
-
-    const tmpFile = path.join(os.tmpdir(), `plex-restore-${Date.now()}.sql`);
-    writeFileSync(tmpFile, `.separator '${sep}'\n${sql}\n`);
-    let rows;
-    try {
-      const raw = execSync(
-        `/usr/bin/sqlite3 ${JSON.stringify(plexDb)} < ${JSON.stringify(tmpFile)}`,
-        { encoding: "utf-8", maxBuffer: 50 * 1024 * 1024, shell: true }
-      );
-      rows = raw.trim().split("\n").filter(Boolean).map((line) => line.split(sep));
-    } finally {
-      unlinkSync(tmpFile);
-    }
-
-    const formatDate = (unixSeconds) =>
-      new Date(unixSeconds * 1000).toISOString().replace("T", " ").slice(0, 19);
-
-    let toUpdate = 0;
-    let alreadyCorrect = 0;
-    let missing = 0;
-    const changes = [];
-
-    for (const [idStr, title, addedAtStr, filePath] of rows) {
-      const currentAddedAt = parseInt(addedAtStr, 10);
-      const folderPath = path.dirname(filePath);
-
-      try {
-        const s = statSync(folderPath);
-        const birthtime = Math.floor(s.birthtimeMs / 1000);
-
-        if (birthtime === currentAddedAt) {
-          alreadyCorrect++;
-        } else {
-          toUpdate++;
-          changes.push({
-            id: parseInt(idStr, 10),
-            title,
-            oldDate: formatDate(currentAddedAt),
-            newDate: formatDate(birthtime),
-          });
-        }
-      } catch (err) {
-        missing++;
-      }
-    }
+    const { summary, changes } = buildRestoreDatePlan(plexDb);
 
     res.json({
       success: true,
-      summary: {
-        total: rows.length,
-        toUpdate,
-        alreadyCorrect,
-        missing,
-      },
+      summary,
       changes: changes.slice(0, 20),
       totalChanges: changes.length,
     });
@@ -2811,7 +2741,7 @@ app.get("/api/plex/restore-dates/preview", async (req, res) => {
   }
 });
 
-// Apply: update Plex DB added_at from folder birthtimes
+// Apply: update Plex DB added_at from on-disk birthtimes.
 app.post("/api/plex/restore-dates/apply", async (req, res) => {
   try {
     const plexDb = getPlexDbPath();
@@ -2820,61 +2750,19 @@ app.post("/api/plex/restore-dates/apply", async (req, res) => {
       return res.status(400).json({ success: false, error: "Plex database not found" });
     }
 
-    // Backup
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const backupPath = `${plexDb}.backup-${timestamp}`;
-    copyFileSync(plexDb, backupPath);
-    console.log(`Backed up Plex DB to: ${backupPath}`);
-
-    // Query albums. Select the absolute track file path (media_parts.file) so
-    // the album folder is derived directly from Plex — no MUSIC_LIBRARY_PATH.
-    const sep = "\x1f";
-    const sql = `SELECT
-       mi.id,
-       mi.title,
-       mi.added_at,
-       MIN(mp.file) as file_path
-     FROM metadata_items mi
-     JOIN metadata_items tracks ON tracks.parent_id = mi.id AND tracks.metadata_type = 10
-     JOIN media_items mei ON tracks.id = mei.metadata_item_id
-     JOIN media_parts mp ON mei.id = mp.media_item_id
-     WHERE mi.metadata_type = 9
-     GROUP BY mi.id`;
-
-    const tmpFile = path.join(os.tmpdir(), `plex-restore-apply-${Date.now()}.sql`);
-    writeFileSync(tmpFile, `.separator '${sep}'\n${sql}\n`);
-    let rows;
-    try {
-      const raw = execSync(
-        `/usr/bin/sqlite3 ${JSON.stringify(plexDb)} < ${JSON.stringify(tmpFile)}`,
-        { encoding: "utf-8", maxBuffer: 50 * 1024 * 1024, shell: true }
-      );
-      rows = raw.trim().split("\n").filter(Boolean).map((line) => line.split(sep));
-    } finally {
-      unlinkSync(tmpFile);
-    }
-
-    // Collect updates
-    const updates = [];
-    for (const [idStr, title, addedAtStr, filePath] of rows) {
-      const albumId = parseInt(idStr, 10);
-      const currentAddedAt = parseInt(addedAtStr, 10);
-      const folderPath = path.dirname(filePath);
-
-      try {
-        const s = statSync(folderPath);
-        const birthtime = Math.floor(s.birthtimeMs / 1000);
-        if (birthtime !== currentAddedAt) {
-          updates.push([albumId, birthtime]);
-        }
-      } catch {
-        // skip missing folders
-      }
-    }
+    // Build the plan first (read-only) so we can skip the backup entirely when
+    // there is nothing to change.
+    const { updates } = buildRestoreDatePlan(plexDb);
 
     if (updates.length === 0) {
       return res.json({ success: true, updated: 0, message: "No changes needed" });
     }
+
+    // Backup before any write.
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupPath = `${plexDb}.backup-${timestamp}`;
+    copyFileSync(plexDb, backupPath);
+    console.log(`Backed up Plex DB to: ${backupPath}`);
 
     // Build SQL: drop FTS triggers, update in transaction, recreate triggers
     const dropTriggers = [
