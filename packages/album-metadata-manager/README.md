@@ -96,10 +96,10 @@ pnpm dev:frontend
 Open **http://localhost:5173**.
 
 > **Using Claude Code?** This package ships a `start-dev` skill that runs both
-> servers in a detached `tmux` session (`mt-dev`), so they outlive the Claude
-> session and write logs to `/tmp/mt-backend.log` and `/tmp/mt-frontend.log`. Ask
+> servers in a detached `tmux` session (`amm-dev`), so they outlive the Claude
+> session and write logs to `/tmp/amm-backend.log` and `/tmp/amm-frontend.log`. Ask
 > Claude to "start the dev servers" (or invoke `/start-dev`) instead of opening
-> two terminals. Stop them with `tmux kill-session -t mt-dev`.
+> two terminals. Stop them with `tmux kill-session -t amm-dev`.
 
 ### 5. Connect Plex
 
