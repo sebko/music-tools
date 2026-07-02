@@ -5,8 +5,9 @@ import {
   PageHeader,
   PageLoader,
   Button,
+  ThemeToggle,
 } from "@music-tools/my-component-library";
-import { FolderOpen, Save, Check, AlertCircle, Wand2, Inbox } from "lucide-react";
+import { FolderOpen, Save, Check, AlertCircle, Wand2, Inbox, Palette } from "lucide-react";
 
 function SettingsPage() {
   const navigate = useNavigate();
@@ -205,6 +206,18 @@ function SettingsPage() {
             <Wand2 className="w-4 h-4" />
             Run setup wizard
           </Button>
+        </div>
+
+        <div className="rounded-base border-base shadow-base bg-background p-6 mt-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Palette className="w-5 h-5 text-foreground" />
+              <h2 className="text-lg font-heading text-foreground">
+                Appearance
+              </h2>
+            </div>
+            <ThemeToggle />
+          </div>
         </div>
       </div>
     </div>

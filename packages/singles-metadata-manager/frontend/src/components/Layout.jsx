@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { ThemeToggle, AppShell, NavLink } from "@music-tools/my-component-library";
+import { AppShell, NavLink } from "@music-tools/my-component-library";
 
 function Layout({ children }) {
   const location = useLocation();
@@ -33,7 +33,6 @@ function Layout({ children }) {
           </NavLink>
         </>
       }
-      actions={<ThemeToggle />}
     >
       {children}
     </AppShell>
